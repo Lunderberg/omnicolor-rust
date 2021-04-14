@@ -3,6 +3,8 @@ use itertools::Itertools;
 use crate::kd_tree;
 use kd_tree::KDTree;
 
+use crate::errors::Error;
+
 use crate::point_tracker::PointTracker;
 
 #[derive(Debug, Clone, Copy)]
@@ -60,9 +62,60 @@ pub fn generate_uniform_palette(n_colors: u32) -> Vec<RGB> {
     return output;
 }
 
+pub struct GrowthImageBuilder {
+    width: u32,
+    height: u32,
+    epsilon: f32,
+    palette: Option<Vec<RGB>>,
+}
+
+impl GrowthImageBuilder {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            epsilon: 1.0,
+            palette: None,
+        }
+    }
+
+    pub fn epsilon(mut self, epsilon: f32) -> Self {
+        self.epsilon = epsilon;
+        self
+    }
+
+    pub fn palette(mut self, palette: Vec<RGB>) -> Self {
+        self.palette = Some(palette);
+        self
+    }
+
+    pub fn palette_generator<F>(self, gen: F) -> Self
+    where
+        F: FnOnce(u32) -> Vec<RGB>,
+    {
+        let palette = gen(self.width * self.height);
+        self.palette(palette)
+    }
+
+    pub fn build(self) -> Result<GrowthImage, Error> {
+        let palette = self.palette.ok_or(Error::NoPaletteDefined)?;
+        let pixels = vec![None; (self.width as usize) * (self.height as usize)];
+        let palette = KDTree::new(palette, self.epsilon);
+        Ok(GrowthImage {
+            width: self.width,
+            height: self.height,
+            pixels,
+            palette,
+            point_tracker: PointTracker::new(self.width, self.height),
+            done: false,
+        })
+    }
+}
+
 pub struct GrowthImage {
     width: u32,
     height: u32,
+
     pixels: Vec<Option<RGB>>,
     palette: KDTree<RGB>,
     point_tracker: PointTracker,
@@ -71,19 +124,6 @@ pub struct GrowthImage {
 }
 
 impl GrowthImage {
-    pub fn new(width: u32, height: u32, palette: Vec<RGB>) -> GrowthImage {
-        let pixels = vec![None; (width as usize) * (height as usize)];
-        let palette = KDTree::new(palette);
-        GrowthImage {
-            width,
-            height,
-            pixels,
-            palette,
-            done: false,
-            point_tracker: PointTracker::new(width, height),
-        }
-    }
-
     fn get_index(&self, i: i32, j: i32) -> Option<usize> {
         if (i >= 0)
             && (j >= 0)
@@ -109,9 +149,7 @@ impl GrowthImage {
 
     pub fn fill(&mut self) {
         let res = self.try_fill();
-        if let None = res {
-            self.done = true;
-        }
+        self.done = res.is_none();
     }
 
     pub fn get_adjacent_color(&self, i: u32, j: u32) -> Option<RGB> {
@@ -180,19 +218,6 @@ impl GrowthImage {
         let next_color = self.palette.pop_closest(&target_color)?;
 
         self.pixels[next_index] = Some(next_color);
-
-        // println!(
-        //     "({},{}) (index={}) => ({},{},{}), target = ({},{},{})",
-        //     x,
-        //     y,
-        //     next_index,
-        //     next_color.r(),
-        //     next_color.g(),
-        //     next_color.b(),
-        //     target_color.r(),
-        //     target_color.g(),
-        //     target_color.b()
-        // );
 
         Some((x, y, next_color))
     }

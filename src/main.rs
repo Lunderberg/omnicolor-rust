@@ -18,7 +18,14 @@ fn main() -> Result<(), Error> {
                 .long("output")
                 .value_name("FILE")
                 .help("Output png file")
-                .required(true)
+                .takes_value(true)
+        )
+        .arg(
+            clap::Arg::with_name("output_stats")
+                .short("s")
+                .long("output-stats")
+                .value_name("FILE")
+                .help("Output png file for kd-tree stats")
                 .takes_value(true)
         )
         .arg(
@@ -62,7 +69,15 @@ fn main() -> Result<(), Error> {
         .map(|s| s.parse::<f32>())
         .unwrap_or(Ok(1.0))?;
 
-    let output = matches.value_of("output").unwrap();
+    let output_image = matches.value_of("output");
+
+    let output_stats_image = matches.value_of("output_stats");
+
+    if output_image.is_none() && output_stats_image.is_none() {
+        return Err(Error::ArgumentError(
+            "Must define at least one of output or output_stats".to_string(),
+        ));
+    }
 
     let mut image = GrowthImageBuilder::new(width, height)
         .epsilon(epsilon)
@@ -79,7 +94,12 @@ fn main() -> Result<(), Error> {
     }
     bar.finish();
 
-    image.write(output);
+    if let Some(output) = output_image {
+        image.write(output);
+    }
+    if let Some(output) = output_stats_image {
+        image.write_stats(output);
+    }
 
     Ok(())
 }

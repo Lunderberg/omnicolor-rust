@@ -44,6 +44,29 @@ struct SearchRes {
     leaf_node_index: usize,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct PerformanceStats {
+    pub nodes_checked: u32,
+    pub leaf_nodes_checked: u32,
+    pub points_checked: u32,
+}
+
+impl Default for PerformanceStats {
+    fn default() -> Self {
+        PerformanceStats {
+            nodes_checked: 0,
+            leaf_nodes_checked: 0,
+            points_checked: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct KdtreeResult<T: Point> {
+    pub res: Option<T>,
+    pub stats: PerformanceStats,
+}
+
 impl<T> KDTree<T>
 where
     T: Point,
@@ -141,15 +164,20 @@ where
         );
     }
 
-    pub fn get_closest(&self, target: &T) -> Option<T> {
-        self.get_closest_node(target, 0)
+    pub fn get_closest(&self, target: &T) -> KdtreeResult<T> {
+        let mut stats = PerformanceStats::default();
+        let res = self
+            .get_closest_node(target, 0, &mut stats)
             .map(|res| self.points[res.point_index])
-            .flatten()
+            .flatten();
+        KdtreeResult { res, stats }
     }
 
-    pub fn pop_closest(&mut self, target: &T) -> Option<T> {
-        let res = self.get_closest_node(target, 0);
-        match res {
+    pub fn pop_closest(&mut self, target: &T) -> KdtreeResult<T> {
+        let mut stats = PerformanceStats::default();
+        let res = self.get_closest_node(target, 0, &mut stats);
+
+        let res = match res {
             None => None,
             Some(res) => {
                 let output = self.points[res.point_index];
@@ -164,14 +192,18 @@ where
 
                 output
             }
-        }
+        };
+        KdtreeResult { res, stats }
     }
 
     fn get_closest_node(
         &self,
         target: &T,
         node_index: usize,
+        stats: &mut PerformanceStats,
     ) -> Option<SearchRes> {
+        stats.nodes_checked += 1;
+
         let node = &self.nodes[node_index];
         if node.num_points == 0 {
             return None;
@@ -179,6 +211,9 @@ where
 
         match &node.data {
             NodeData::Leaf { i_initial, i_final } => {
+                stats.leaf_nodes_checked += 1;
+                stats.points_checked += node.num_points;
+
                 // If it is a leaf node, just check each distance.
                 let (point_index, dist2) = (*i_initial..*i_final)
                     .map(|i| (i, self.points[i]))
@@ -212,7 +247,7 @@ where
 
                 // If it is an internal node, start by checking the
                 // half that contains the target point.
-                let res1 = self.get_closest_node(target, *search_first);
+                let res1 = self.get_closest_node(target, *search_first, stats);
                 if res1
                     .filter(|r| {
                         r.dist2 < diff * diff * self.epsilon_plus_1_squared
@@ -222,7 +257,7 @@ where
                     return res1;
                 }
 
-                let res2 = self.get_closest_node(target, *search_second);
+                let res2 = self.get_closest_node(target, *search_second, stats);
 
                 [res1, res2]
                     .iter()

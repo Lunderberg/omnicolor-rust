@@ -3,6 +3,7 @@ pub enum Error {
     NoPaletteDefined,
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError),
+    ArgumentError(String),
     //NoneError,
 }
 

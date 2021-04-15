@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::kd_tree;
-use kd_tree::KDTree;
+use kd_tree::{KDTree, PerformanceStats};
 
 use crate::errors::Error;
 
@@ -100,11 +100,13 @@ impl GrowthImageBuilder {
     pub fn build(self) -> Result<GrowthImage, Error> {
         let palette = self.palette.ok_or(Error::NoPaletteDefined)?;
         let pixels = vec![None; (self.width as usize) * (self.height as usize)];
+        let stats = vec![None; (self.width as usize) * (self.height as usize)];
         let palette = KDTree::new(palette, self.epsilon);
         Ok(GrowthImage {
             width: self.width,
             height: self.height,
             pixels,
+            stats,
             palette,
             point_tracker: PointTracker::new(self.width, self.height),
             done: false,
@@ -117,6 +119,7 @@ pub struct GrowthImage {
     height: u32,
 
     pixels: Vec<Option<RGB>>,
+    stats: Vec<Option<PerformanceStats>>,
     palette: KDTree<RGB>,
     point_tracker: PointTracker,
 
@@ -215,22 +218,16 @@ impl GrowthImage {
                 ],
             });
 
-        let next_color = self.palette.pop_closest(&target_color)?;
+        let res = self.palette.pop_closest(&target_color);
+        self.stats[next_index] = Some(res.stats);
 
+        let next_color = res.res?;
         self.pixels[next_index] = Some(next_color);
 
         Some((x, y, next_color))
     }
 
     pub fn write(&self, filename: &str) {
-        let file = std::fs::File::create(filename).unwrap();
-        let bufwriter = &mut std::io::BufWriter::new(file);
-
-        let mut encoder = png::Encoder::new(bufwriter, self.width, self.height);
-        encoder.set_color(png::ColorType::RGBA);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().unwrap();
-
         let data = self
             .pixels
             .iter()
@@ -240,6 +237,65 @@ impl GrowthImage {
             })
             .flat_map(|p| p.into_iter())
             .collect::<Vec<u8>>();
+
+        self.write_image(filename, &data);
+    }
+
+    pub fn write_stats(&self, filename: &str) {
+        let max = self.stats.iter().filter_map(|s| *s).fold(
+            PerformanceStats::default(),
+            |a, b| PerformanceStats {
+                nodes_checked: a.nodes_checked.max(b.nodes_checked),
+                leaf_nodes_checked: a
+                    .leaf_nodes_checked
+                    .max(b.leaf_nodes_checked),
+                points_checked: a.points_checked.max(b.points_checked),
+            },
+        );
+
+        let data = self
+            .stats
+            .iter()
+            .map(|s| match s {
+                // Linear scaling from 0 to max.
+                // Some(stats) => vec![
+                //     (255 * stats.nodes_checked / max.nodes_checked) as u8,
+                //     (255 * stats.leaf_nodes_checked / max.leaf_nodes_checked)
+                //         as u8,
+                //     (255 * stats.points_checked / max.points_checked) as u8,
+                //     255,
+                // ],
+                Some(stats) => vec![
+                    (255.0
+                        * ((stats.nodes_checked as f32).ln()
+                            / (max.nodes_checked as f32).ln()))
+                        as u8,
+                    (255.0
+                        * ((stats.leaf_nodes_checked as f32).ln()
+                            / (max.leaf_nodes_checked as f32).ln()))
+                        as u8,
+                    (255.0
+                        * ((stats.points_checked as f32).ln()
+                            / (max.points_checked as f32).ln()))
+                        as u8,
+                    255,
+                ],
+                None => vec![0, 0, 0, 0],
+            })
+            .flat_map(|p| p.into_iter())
+            .collect::<Vec<u8>>();
+        self.write_image(filename, &data)
+    }
+
+    fn write_image(&self, filename: &str, data: &[u8]) {
+        let file = std::fs::File::create(filename).unwrap();
+        let bufwriter = &mut std::io::BufWriter::new(file);
+
+        let mut encoder = png::Encoder::new(bufwriter, self.width, self.height);
+        encoder.set_color(png::ColorType::RGBA);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+
         writer.write_image_data(&data).unwrap();
     }
 }

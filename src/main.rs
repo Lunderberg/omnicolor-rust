@@ -88,6 +88,7 @@ fn main() -> Result<(), Error> {
     bar.set_style(ProgressStyle::default_bar().template(
         "[{pos}/{len}] {wide_bar} [{elapsed_precise}, ETA: {eta_precise}]",
     ));
+    bar.set_draw_rate(10);
     while !image.done {
         image.fill();
         bar.inc(1);

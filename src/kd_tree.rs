@@ -202,12 +202,11 @@ where
         node_index: usize,
         stats: &mut PerformanceStats,
     ) -> Option<SearchRes> {
-        stats.nodes_checked += 1;
-
         let node = &self.nodes[node_index];
         if node.num_points == 0 {
             return None;
         }
+        stats.nodes_checked += 1;
 
         match &node.data {
             NodeData::Leaf { i_initial, i_final } => {

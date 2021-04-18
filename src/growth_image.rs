@@ -1,10 +1,8 @@
 use itertools::Itertools;
-
-use crate::kd_tree;
-use kd_tree::{KDTree, PerformanceStats};
+use std::path::PathBuf;
 
 use crate::errors::Error;
-
+use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
 
 #[derive(Debug, Clone, Copy)]
@@ -24,7 +22,7 @@ impl RGB {
     }
 }
 
-impl kd_tree::Point for RGB {
+impl Point for RGB {
     type Dtype = u8;
     const NUM_DIMENSIONS: u8 = 3;
 
@@ -227,7 +225,7 @@ impl GrowthImage {
         Some((x, y, next_color))
     }
 
-    pub fn write(&self, filename: &str) {
+    pub fn write(&self, filename: &PathBuf) {
         let data = self
             .pixels
             .iter()
@@ -241,7 +239,7 @@ impl GrowthImage {
         self.write_image(filename, &data);
     }
 
-    pub fn write_stats(&self, filename: &str) {
+    pub fn write_stats(&self, filename: &PathBuf) {
         let max = self.stats.iter().filter_map(|s| *s).fold(
             PerformanceStats::default(),
             |a, b| PerformanceStats {
@@ -287,7 +285,7 @@ impl GrowthImage {
         self.write_image(filename, &data)
     }
 
-    fn write_image(&self, filename: &str, data: &[u8]) {
+    fn write_image(&self, filename: &PathBuf, data: &[u8]) {
         let file = std::fs::File::create(filename).unwrap();
         let bufwriter = &mut std::io::BufWriter::new(file);
 

@@ -302,7 +302,7 @@ mod test {
             TestPoint { x: 1.0, y: 0.0 },
             TestPoint { x: 0.0, y: -1.0 },
         ];
-        let tree = KDTree::new(points);
+        let tree = KDTree::new(points, 1.0);
 
         assert_eq!(tree.num_points(), 4);
     }
@@ -315,15 +315,15 @@ mod test {
                 y: (i % 5) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points);
+        let tree = KDTree::new(points, 1.0);
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }),
+            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }).res,
             Some(TestPoint { x: 1.0, y: 1.0 })
         );
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }),
+            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }).res,
             Some(TestPoint { x: 4.0, y: 1.0 })
         );
     }
@@ -336,17 +336,17 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points);
+        let tree = KDTree::new(points, 1.0);
 
         assert!(tree.nodes.len() > 10000 / MAX_LEAF_SIZE);
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }),
+            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }).res,
             Some(TestPoint { x: 1.0, y: 1.0 })
         );
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }),
+            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }).res,
             Some(TestPoint { x: 4.0, y: 1.0 })
         );
     }
@@ -359,7 +359,7 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points);
+        let tree = KDTree::new(points, 1.0);
 
         tree.nodes.iter().for_each(|node| {
             if let Some(parent) = node.parent {
@@ -388,42 +388,45 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let mut tree = KDTree::new(points);
+        let mut tree = KDTree::new(points, 1.0);
 
         assert!(tree.nodes.len() > 10000 / MAX_LEAF_SIZE);
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }),
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
             Some(TestPoint { x: 1.0, y: 2.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }),
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
             Some(TestPoint { x: 1.0, y: 1.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }),
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
             Some(TestPoint { x: 2.0, y: 2.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }),
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
             Some(TestPoint { x: 2.0, y: 1.0 })
         );
 
         for _i in 0..9995 {
             assert_ne!(
-                tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }),
+                tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
                 None
             )
         }
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }),
+            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
             Some(TestPoint { x: 0.0, y: 0.0 })
         );
 
-        assert_eq!(tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }), None);
+        assert_eq!(
+            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
+            None
+        );
     }
 }

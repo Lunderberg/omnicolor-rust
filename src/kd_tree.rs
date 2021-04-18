@@ -1,7 +1,7 @@
 const MAX_LEAF_SIZE: usize = 50;
 
-pub trait Point: Copy {
-    type Dtype: PartialOrd + Copy + Into<f64>;
+pub trait Point: Copy + std::fmt::Debug {
+    type Dtype: PartialOrd + Copy + Into<f64> + std::fmt::Debug;
     const NUM_DIMENSIONS: u8;
 
     // Dimension parameter guaranteed to be less than NUM_DIMENSIONS.
@@ -12,6 +12,7 @@ pub trait Point: Copy {
     fn dist2(&self, other: &Self) -> f64;
 }
 
+#[derive(Debug)]
 enum NodeData<T: Point> {
     Internal {
         left: usize,
@@ -25,6 +26,7 @@ enum NodeData<T: Point> {
     },
 }
 
+#[derive(Debug)]
 struct Node<T: Point> {
     num_points: u32,
     parent: Option<usize>,
@@ -97,7 +99,7 @@ where
         parent_index: Option<usize>,
     ) {
         // If few enough points, make a leaf node.
-        if points.len() < MAX_LEAF_SIZE {
+        if points.len() <= MAX_LEAF_SIZE {
             let node = Node {
                 num_points: points.len() as u32,
                 parent: parent_index,
@@ -302,7 +304,7 @@ mod test {
             TestPoint { x: 1.0, y: 0.0 },
             TestPoint { x: 0.0, y: -1.0 },
         ];
-        let tree = KDTree::new(points, 1.0);
+        let tree = KDTree::new(points, 0.0);
 
         assert_eq!(tree.num_points(), 4);
     }
@@ -315,7 +317,7 @@ mod test {
                 y: (i % 5) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points, 1.0);
+        let tree = KDTree::new(points, 0.0);
 
         assert_eq!(
             tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }).res,
@@ -336,7 +338,7 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points, 1.0);
+        let tree = KDTree::new(points, 0.0);
 
         assert!(tree.nodes.len() > 10000 / MAX_LEAF_SIZE);
 
@@ -359,7 +361,7 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points, 1.0);
+        let tree = KDTree::new(points, 0.0);
 
         tree.nodes.iter().for_each(|node| {
             if let Some(parent) = node.parent {
@@ -388,7 +390,7 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let mut tree = KDTree::new(points, 1.0);
+        let mut tree = KDTree::new(points, 0.0);
 
         assert!(tree.nodes.len() > 10000 / MAX_LEAF_SIZE);
 
@@ -428,5 +430,30 @@ mod test {
             tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
             None
         );
+    }
+
+    #[test]
+    fn test_epsilon() {
+        // This test relies on too many implementation details, maybe
+        // should be simplified.  Makes a kd tree that deliberately
+        // has two leaf nodes, then look for a point close to the
+        // median.  With epsilon==0, the exact point is found, but
+        // with more nodes checked.  With epsilon>0, a close point is
+        // found, but with fewer leaf nodes checked.
+        let q1_points =
+            (0..MAX_LEAF_SIZE).map(|_i| TestPoint { x: -1.0, y: -2.0 });
+        let q3_points =
+            (0..MAX_LEAF_SIZE).map(|_i| TestPoint { x: 1.0, y: 2.0 });
+        let points = q1_points.chain(q3_points).collect::<Vec<_>>();
+
+        let tree = KDTree::new(points.clone(), 0.0);
+        let res = tree.get_closest(&TestPoint { x: -0.1, y: 2.0 });
+        assert_eq!(res.res, Some(TestPoint { x: 1.0, y: 2.0 }));
+        assert_eq!(res.stats.leaf_nodes_checked, 2);
+
+        let tree = KDTree::new(points, 5.0);
+        let res = tree.get_closest(&TestPoint { x: -0.1, y: 2.0 });
+        assert_eq!(res.res, Some(TestPoint { x: -1.0, y: -2.0 }));
+        assert_eq!(res.stats.leaf_nodes_checked, 1);
     }
 }

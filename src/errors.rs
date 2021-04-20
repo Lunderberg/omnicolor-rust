@@ -1,10 +1,19 @@
+use std::fmt::{Display, Formatter};
+
 #[derive(Debug)]
 pub enum Error {
     NoPaletteDefined,
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError),
-    ArgumentError(String),
+    VecLengthError(usize),
     //NoneError,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{:?}", self)?;
+        Ok(())
+    }
 }
 
 impl From<std::num::ParseIntError> for Error {
@@ -16,6 +25,12 @@ impl From<std::num::ParseIntError> for Error {
 impl From<std::num::ParseFloatError> for Error {
     fn from(e: std::num::ParseFloatError) -> Self {
         Error::ParseFloatError(e)
+    }
+}
+
+impl From<Vec<u8>> for Error {
+    fn from(e: Vec<u8>) -> Self {
+        Error::VecLengthError(e.len())
     }
 }
 

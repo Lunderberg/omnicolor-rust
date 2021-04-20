@@ -1,15 +1,28 @@
 use std::path::PathBuf;
 
+use clap::arg_enum;
 use indicatif::{ProgressBar, ProgressStyle};
 use structopt::StructOpt;
 
+mod color;
 mod errors;
 mod growth_image;
 mod kd_tree;
+mod palettes;
 mod point_tracker;
 
+use color::RGB;
 use errors::Error;
-use growth_image::{generate_uniform_palette, GrowthImageBuilder};
+use growth_image::GrowthImageBuilder;
+use palettes::{generate_spherical_palette, generate_uniform_palette};
+
+arg_enum! {
+    #[derive(Debug, PartialEq)]
+    enum PaletteOpt{
+        Uniform,
+        Spherical,
+    }
+}
 
 #[derive(Debug, StructOpt)]
 struct Options {
@@ -27,14 +40,36 @@ struct Options {
 
     #[structopt(short, long, default_value = "5.0")]
     epsilon: f32,
+
+    #[structopt(short, long,
+                default_value = "uniform",
+                case_insensitive = true,
+                possible_values = &PaletteOpt::variants())
+    ]
+    palette: PaletteOpt,
+
+    #[structopt(long, required_if("palette", "spherical"))]
+    central_color: Option<RGB>,
+
+    #[structopt(long, required_if("palette", "spherical"))]
+    color_radius: Option<f32>,
 }
 
 fn main() -> Result<(), Error> {
     let opt = Options::from_args();
 
+    let palette = match opt.palette {
+        PaletteOpt::Uniform => generate_uniform_palette(opt.width * opt.height),
+        PaletteOpt::Spherical => generate_spherical_palette(
+            opt.width * opt.height,
+            opt.central_color.unwrap(),
+            opt.color_radius.unwrap(),
+        ),
+    };
+
     let mut image = GrowthImageBuilder::new(opt.width, opt.height)
         .epsilon(opt.epsilon)
-        .palette_generator(generate_uniform_palette)
+        .palette(palette)
         .build()?;
 
     let bar = ProgressBar::new((opt.width * opt.height).into());

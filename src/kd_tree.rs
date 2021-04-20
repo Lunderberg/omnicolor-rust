@@ -87,7 +87,7 @@ where
         }
     }
 
-    pub fn num_points(&self) -> usize {
+    pub fn _num_points(&self) -> usize {
         self.points.iter().filter(|p| p.is_some()).count()
     }
 
@@ -166,6 +166,7 @@ where
         );
     }
 
+    #[allow(dead_code)]
     pub fn get_closest(&self, target: &T) -> KdtreeResult<T> {
         let mut stats = PerformanceStats::default();
         let res = self

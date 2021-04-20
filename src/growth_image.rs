@@ -1,26 +1,11 @@
-use itertools::Itertools;
 use std::path::PathBuf;
 
+use itertools::Itertools;
+
+use crate::color::RGB;
 use crate::errors::Error;
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
-
-#[derive(Debug, Clone, Copy)]
-pub struct RGB {
-    vals: [u8; 3],
-}
-
-impl RGB {
-    pub fn r(&self) -> u8 {
-        self.vals[0]
-    }
-    pub fn g(&self) -> u8 {
-        self.vals[1]
-    }
-    pub fn b(&self) -> u8 {
-        self.vals[2]
-    }
-}
 
 impl Point for RGB {
     type Dtype = u8;
@@ -37,27 +22,6 @@ impl Point for RGB {
             .map(|(a, b)| ((*a as f64) - (*b as f64)).powf(2.0))
             .sum()
     }
-}
-
-pub fn generate_uniform_palette(n_colors: u32) -> Vec<RGB> {
-    let mut output = Vec::new();
-    output.reserve(n_colors as usize);
-
-    let dim_size = (n_colors as f32).powf(1.0 / 3.0);
-    for i in 0..n_colors {
-        let val = (i as f32) / dim_size;
-        let r = 255.0 * (val % 1.0);
-        let val = val.floor() / dim_size;
-        let g = 255.0 * (val % 1.0);
-        let val = val.floor() / dim_size;
-        let b = 255.0 * val;
-
-        output.push(RGB {
-            vals: [r as u8, g as u8, b as u8],
-        });
-    }
-
-    return output;
 }
 
 pub struct GrowthImageBuilder {
@@ -85,14 +49,6 @@ impl GrowthImageBuilder {
     pub fn palette(mut self, palette: Vec<RGB>) -> Self {
         self.palette = Some(palette);
         self
-    }
-
-    pub fn palette_generator<F>(self, gen: F) -> Self
-    where
-        F: FnOnce(u32) -> Vec<RGB>,
-    {
-        let palette = gen(self.width * self.height);
-        self.palette(palette)
     }
 
     pub fn build(self) -> Result<GrowthImage, Error> {
@@ -137,7 +93,7 @@ impl GrowthImage {
         }
     }
 
-    fn get_xy(&self, index: usize) -> Option<(u32, u32)> {
+    fn _get_xy(&self, index: usize) -> Option<(u32, u32)> {
         if index < self.pixels.len() {
             Some((
                 (index % (self.width as usize)) as u32,

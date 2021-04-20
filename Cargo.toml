@@ -11,9 +11,16 @@ num-traits = "0.2"
 png = "0.16.8"
 itertools = "0.10.0"
 rand = "0.8.3"
+
 structopt = "0.3.21"
+clap = "*"
 
 # Latest indicatif version as of 2021-04-17 is 0.15.0, which doesn't
 # have set_draw_rate.  Once 0.16.0 is out, should use it instead.
 #indicatif = "0.16.0"
 indicatif = { git = "https://github.com/mitsuhiko/indicatif", branch = "main" }
+
+# Version of clap 2.x.x with this PR
+# https://github.com/clap-rs/clap/pull/2446
+[patch.crates-io]
+clap = { git = "https://github.com/Lunderberg/clap", branch = "v2-master" }

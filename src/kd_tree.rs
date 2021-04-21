@@ -87,7 +87,8 @@ where
         }
     }
 
-    pub fn _num_points(&self) -> usize {
+    #[cfg(test)]
+    pub fn num_points(&self) -> usize {
         self.points.iter().filter(|p| p.is_some()).count()
     }
 

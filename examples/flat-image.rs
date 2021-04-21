@@ -4,17 +4,8 @@ use clap::arg_enum;
 use indicatif::{ProgressBar, ProgressStyle};
 use structopt::StructOpt;
 
-mod color;
-mod errors;
-mod growth_image;
-mod kd_tree;
-mod palettes;
-mod point_tracker;
-
-use color::RGB;
-use errors::Error;
-use growth_image::GrowthImageBuilder;
-use palettes::{generate_spherical_palette, generate_uniform_palette};
+use omnicolor_rust::palettes::*;
+use omnicolor_rust::{Error, GrowthImageBuilder, RGB};
 
 arg_enum! {
     #[derive(Debug, PartialEq)]

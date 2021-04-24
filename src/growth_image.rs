@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use itertools::Itertools;
 
 use crate::color::RGB;
-use crate::common::PixelLoc;
+use crate::common::{PixelLoc, RectangularArray};
 use crate::errors::Error;
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
@@ -26,8 +26,7 @@ impl Point for RGB {
 }
 
 pub struct GrowthImageBuilder {
-    width: u32,
-    height: u32,
+    size: RectangularArray,
     epsilon: f32,
     palette: Option<Vec<RGB>>,
 }
@@ -35,8 +34,7 @@ pub struct GrowthImageBuilder {
 impl GrowthImageBuilder {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
-            width,
-            height,
+            size: RectangularArray { width, height },
             epsilon: 1.0,
             palette: None,
         }
@@ -54,24 +52,22 @@ impl GrowthImageBuilder {
 
     pub fn build(self) -> Result<GrowthImage, Error> {
         let palette = self.palette.ok_or(Error::NoPaletteDefined)?;
-        let pixels = vec![None; (self.width as usize) * (self.height as usize)];
-        let stats = vec![None; (self.width as usize) * (self.height as usize)];
+        let pixels = vec![None; self.size.len()];
+        let stats = vec![None; self.size.len()];
         let palette = KDTree::new(palette, self.epsilon);
         Ok(GrowthImage {
-            width: self.width,
-            height: self.height,
+            size: self.size,
             pixels,
             stats,
             palette,
-            point_tracker: PointTracker::new(self.width, self.height),
+            point_tracker: PointTracker::new(self.size),
             done: false,
         })
     }
 }
 
 pub struct GrowthImage {
-    width: u32,
-    height: u32,
+    size: RectangularArray,
 
     pixels: Vec<Option<RGB>>,
     stats: Vec<Option<PerformanceStats>>,
@@ -82,29 +78,6 @@ pub struct GrowthImage {
 }
 
 impl GrowthImage {
-    fn get_index(&self, loc: PixelLoc) -> Option<usize> {
-        if (loc.i >= 0)
-            && (loc.j >= 0)
-            && (loc.i < self.width as i32)
-            && (loc.j < self.height as i32)
-        {
-            Some((loc.j as usize) * (self.width as usize) + (loc.i as usize))
-        } else {
-            None
-        }
-    }
-
-    fn _get_xy(&self, index: usize) -> Option<PixelLoc> {
-        if index < self.pixels.len() {
-            Some(PixelLoc {
-                i: (index % (self.width as usize)) as i32,
-                j: (index / (self.width as usize)) as i32,
-            })
-        } else {
-            None
-        }
-    }
-
     pub fn fill(&mut self) {
         let res = self.try_fill();
         self.done = res.is_none();
@@ -118,7 +91,7 @@ impl GrowthImage {
                 i: loc.i + di,
                 j: loc.j + dj,
             })
-            .flat_map(|loc| self.get_index(loc))
+            .flat_map(|loc| self.size.get_index(loc))
             .flat_map(|index| self.pixels[index])
             .fold(
                 (0u32, 0u32, 0u32, 0u32),
@@ -153,10 +126,7 @@ impl GrowthImage {
 
         // No frontier, everything empty
         if self.point_tracker.frontier_size() == 0 {
-            let first_frontier = PixelLoc {
-                i: (self.width as f32 * rand::random::<f32>()) as i32,
-                j: (self.height as f32 * rand::random::<f32>()) as i32,
-            };
+            let first_frontier = self.size.get_random_loc();
             self.point_tracker.add_to_frontier(first_frontier);
         }
 
@@ -166,7 +136,7 @@ impl GrowthImage {
             self.point_tracker.get_frontier_point(point_tracker_index);
         self.point_tracker.fill(next_loc);
 
-        let next_index = self.get_index(next_loc)?;
+        let next_index = self.size.get_index(next_loc)?;
 
         let target_color =
             self.get_adjacent_color(next_loc).unwrap_or_else(|| RGB {
@@ -250,7 +220,8 @@ impl GrowthImage {
         let file = std::fs::File::create(filename).unwrap();
         let bufwriter = &mut std::io::BufWriter::new(file);
 
-        let mut encoder = png::Encoder::new(bufwriter, self.width, self.height);
+        let mut encoder =
+            png::Encoder::new(bufwriter, self.size.width, self.size.height);
         encoder.set_color(png::ColorType::RGBA);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();

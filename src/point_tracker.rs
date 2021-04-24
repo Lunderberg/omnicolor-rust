@@ -2,35 +2,35 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
-use crate::common::PixelLoc;
+use crate::common::{PixelLoc, RectangularArray};
 
 pub struct PointTracker {
     frontier: Vec<PixelLoc>,
     frontier_map: HashMap<PixelLoc, usize>,
     used: Vec<bool>,
-    width: u32,
-    height: u32,
+    size: RectangularArray,
     pub done: bool,
 }
 
 impl PointTracker {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub fn new(size: RectangularArray) -> Self {
         Self {
-            width,
-            height,
+            size,
             frontier: Vec::new(),
             frontier_map: HashMap::new(),
-            used: vec![false; (width * height) as usize],
+            used: vec![false; size.len()],
             done: false,
         }
     }
 
     pub fn add_to_frontier(&mut self, loc: PixelLoc) {
-        let index = (loc.j * (self.width as i32) + loc.i) as usize;
-        if !self.used[index] {
-            self.frontier_map.insert(loc, self.frontier.len());
-            self.frontier.push(loc);
-            self.used[index] = true;
+        let index = self.size.get_index(loc);
+        if let Some(index) = index {
+            if !self.used[index] {
+                self.frontier_map.insert(loc, self.frontier.len());
+                self.frontier.push(loc);
+                self.used[index] = true;
+            }
         }
     }
 
@@ -43,20 +43,14 @@ impl PointTracker {
     }
 
     pub fn fill(&mut self, loc: PixelLoc) {
-        let width = self.width as i32;
-        let height = self.height as i32;
+        let size = self.size;
         (-1..=1)
             .cartesian_product(-1..=1)
             .map(|(di, dj)| PixelLoc {
                 i: loc.i + di,
                 j: loc.j + dj,
             })
-            .filter(|adjacent| {
-                (adjacent.i >= 0)
-                    && (adjacent.j >= 0)
-                    && (adjacent.i < width)
-                    && (adjacent.j < height)
-            })
+            .filter(|adjacent| size.is_valid(*adjacent))
             .for_each(|adjacent| self.add_to_frontier(adjacent));
 
         self.remove_from_frontier(loc);

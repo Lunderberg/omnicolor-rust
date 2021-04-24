@@ -9,5 +9,5 @@ mod point_tracker;
 
 pub use color::RGB;
 pub use errors::Error;
-pub use growth_image::GrowthImageBuilder;
+pub use growth_image::{GrowthImageBuilder, GrowthImageStageBuilder};
 pub use palettes::*;

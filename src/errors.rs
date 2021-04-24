@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum Error {
-    NoPaletteDefined,
+    NoStagesDefined,
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError),
     VecLengthError(usize),

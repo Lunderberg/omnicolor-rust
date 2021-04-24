@@ -36,7 +36,6 @@ struct Node<T: Point> {
 pub struct KDTree<T: Point> {
     points: Vec<Option<T>>,
     nodes: Vec<Node<T>>,
-    pub epsilon: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -73,21 +72,16 @@ impl<T> KDTree<T>
 where
     T: Point,
 {
-    pub fn new(mut points: Vec<T>, epsilon: f64) -> Self {
+    pub fn new(mut points: Vec<T>) -> Self {
         let mut nodes = Vec::new();
 
         Self::generate_nodes(&mut nodes, &mut points, 0, 0, None);
 
         let points = points.iter().map(|p| Some(*p)).collect();
 
-        KDTree {
-            points,
-            nodes,
-            epsilon,
-        }
+        KDTree { points, nodes }
     }
 
-    #[cfg(test)]
     pub fn num_points(&self) -> usize {
         self.nodes[0].num_points as usize
     }
@@ -168,18 +162,18 @@ where
     }
 
     #[allow(dead_code)]
-    pub fn get_closest(&self, target: &T) -> KdtreeResult<T> {
+    pub fn get_closest(&self, target: &T, epsilon: f64) -> KdtreeResult<T> {
         let mut stats = PerformanceStats::default();
         let res = self
-            .get_closest_node(target, 0, &mut stats)
+            .get_closest_node(target, 0, &mut stats, epsilon)
             .map(|res| self.points[res.point_index])
             .flatten();
         KdtreeResult { res, stats }
     }
 
-    pub fn pop_closest(&mut self, target: &T) -> KdtreeResult<T> {
+    pub fn pop_closest(&mut self, target: &T, epsilon: f64) -> KdtreeResult<T> {
         let mut stats = PerformanceStats::default();
-        let res = self.get_closest_node(target, 0, &mut stats);
+        let res = self.get_closest_node(target, 0, &mut stats, epsilon);
 
         let res = match res {
             None => None,
@@ -205,6 +199,7 @@ where
         target: &T,
         node_index: usize,
         stats: &mut PerformanceStats,
+        epsilon: f64,
     ) -> Option<SearchRes> {
         let node = &self.nodes[node_index];
         if node.num_points == 0 {
@@ -250,10 +245,15 @@ where
 
                 // If it is an internal node, start by checking the
                 // half that contains the target point.
-                let res1 = self.get_closest_node(target, *search_first, stats);
+                let res1 = self.get_closest_node(
+                    target,
+                    *search_first,
+                    stats,
+                    epsilon,
+                );
                 if res1
                     .filter(|r| {
-                        let max_dist2 = (diff * (self.epsilon + 1.0)).powf(2.0);
+                        let max_dist2 = (diff * (epsilon + 1.0)).powf(2.0);
                         r.dist2 < max_dist2
                     })
                     .is_some()
@@ -261,7 +261,12 @@ where
                     return res1;
                 }
 
-                let res2 = self.get_closest_node(target, *search_second, stats);
+                let res2 = self.get_closest_node(
+                    target,
+                    *search_second,
+                    stats,
+                    epsilon,
+                );
 
                 [res1, res2]
                     .iter()
@@ -307,7 +312,7 @@ mod test {
             TestPoint { x: 1.0, y: 0.0 },
             TestPoint { x: 0.0, y: -1.0 },
         ];
-        let tree = KDTree::new(points, 0.0);
+        let tree = KDTree::new(points);
 
         assert_eq!(tree.num_points(), 4);
     }
@@ -320,15 +325,15 @@ mod test {
                 y: (i % 5) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points, 0.0);
+        let tree = KDTree::new(points);
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }).res,
+            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }, 0.0).res,
             Some(TestPoint { x: 1.0, y: 1.0 })
         );
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }).res,
+            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }, 0.0).res,
             Some(TestPoint { x: 4.0, y: 1.0 })
         );
     }
@@ -341,17 +346,17 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points, 0.0);
+        let tree = KDTree::new(points);
 
         assert!(tree.nodes.len() > 10000 / MAX_LEAF_SIZE);
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }).res,
+            tree.get_closest(&TestPoint { x: 1.2, y: 1.2 }, 0.0).res,
             Some(TestPoint { x: 1.0, y: 1.0 })
         );
 
         assert_eq!(
-            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }).res,
+            tree.get_closest(&TestPoint { x: 3.8, y: 1.49 }, 0.0).res,
             Some(TestPoint { x: 4.0, y: 1.0 })
         );
     }
@@ -364,7 +369,7 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let tree = KDTree::new(points, 0.0);
+        let tree = KDTree::new(points);
 
         tree.nodes.iter().for_each(|node| {
             if let Some(parent) = node.parent {
@@ -393,44 +398,44 @@ mod test {
                 y: (i % 100) as f32,
             })
             .collect::<Vec<_>>();
-        let mut tree = KDTree::new(points, 0.0);
+        let mut tree = KDTree::new(points);
 
         assert!(tree.nodes.len() > 10000 / MAX_LEAF_SIZE);
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }, 0.0).res,
             Some(TestPoint { x: 1.0, y: 2.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }, 0.0).res,
             Some(TestPoint { x: 1.0, y: 1.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }, 0.0).res,
             Some(TestPoint { x: 2.0, y: 2.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }).res,
+            tree.pop_closest(&TestPoint { x: 1.45, y: 1.55 }, 0.0).res,
             Some(TestPoint { x: 2.0, y: 1.0 })
         );
 
         for _i in 0..9995 {
             assert_ne!(
-                tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
+                tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }, 0.0).res,
                 None
             )
         }
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
+            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }, 0.0).res,
             Some(TestPoint { x: 0.0, y: 0.0 })
         );
 
         assert_eq!(
-            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }).res,
+            tree.pop_closest(&TestPoint { x: 100.0, y: 100.0 }, 0.0).res,
             None
         );
     }
@@ -449,13 +454,12 @@ mod test {
             (0..MAX_LEAF_SIZE).map(|_i| TestPoint { x: 1.0, y: 2.0 });
         let points = q1_points.chain(q3_points).collect::<Vec<_>>();
 
-        let tree = KDTree::new(points.clone(), 0.0);
-        let res = tree.get_closest(&TestPoint { x: -0.1, y: 2.0 });
+        let tree = KDTree::new(points);
+        let res = tree.get_closest(&TestPoint { x: -0.1, y: 2.0 }, 0.0);
         assert_eq!(res.res, Some(TestPoint { x: 1.0, y: 2.0 }));
         assert_eq!(res.stats.leaf_nodes_checked, 2);
 
-        let tree = KDTree::new(points, 5.0);
-        let res = tree.get_closest(&TestPoint { x: -0.1, y: 2.0 });
+        let res = tree.get_closest(&TestPoint { x: -0.1, y: 2.0 }, 5.0);
         assert_eq!(res.res, Some(TestPoint { x: -1.0, y: -2.0 }));
         assert_eq!(res.stats.leaf_nodes_checked, 1);
     }

@@ -28,7 +28,7 @@ impl Point for RGB {
 pub struct GrowthImageBuilder {
     size: RectangularArray,
     epsilon: f64,
-    palette: Option<Vec<RGB>>,
+    stages: Vec<GrowthImageStageBuilder>,
 }
 
 impl GrowthImageBuilder {
@@ -36,8 +36,13 @@ impl GrowthImageBuilder {
         Self {
             size: RectangularArray { width, height },
             epsilon: 1.0,
-            palette: None,
+            stages: Vec::new(),
         }
+    }
+
+    pub fn add_stage(mut self, stage: GrowthImageStageBuilder) -> Self {
+        self.stages.push(stage);
+        self
     }
 
     pub fn epsilon(mut self, epsilon: f64) -> Self {
@@ -45,25 +50,60 @@ impl GrowthImageBuilder {
         self
     }
 
-    pub fn palette(mut self, palette: Vec<RGB>) -> Self {
-        self.palette = Some(palette);
-        self
+    pub fn palette(self, palette: Vec<RGB>) -> Self {
+        self.add_stage(GrowthImageStageBuilder {
+            palette,
+            ..Default::default()
+        })
     }
 
     pub fn build(self) -> Result<GrowthImage, Error> {
-        let palette = self.palette.ok_or(Error::NoPaletteDefined)?;
+        if self.stages.len() == 0 {
+            return Err(Error::NoStagesDefined);
+        }
+
         let pixels = vec![None; self.size.len()];
         let stats = vec![None; self.size.len()];
-        let palette = KDTree::new(palette, self.epsilon);
         Ok(GrowthImage {
             size: self.size,
             pixels,
             stats,
-            palette,
+            epsilon: self.epsilon,
+            stages: self.stages.into_iter().map(|s| s.build()).collect(),
+            active_stage: None,
+            current_stage_iter: 0,
             point_tracker: PointTracker::new(self.size),
             done: false,
         })
     }
+}
+
+pub struct GrowthImageStageBuilder {
+    pub palette: Vec<RGB>,
+    pub max_iter: Option<usize>,
+}
+
+impl Default for GrowthImageStageBuilder {
+    fn default() -> Self {
+        Self {
+            palette: Vec::new(),
+            max_iter: None,
+        }
+    }
+}
+
+impl GrowthImageStageBuilder {
+    fn build(self) -> GrowthImageStage {
+        GrowthImageStage {
+            palette: KDTree::new(self.palette),
+            max_iter: self.max_iter,
+        }
+    }
+}
+
+struct GrowthImageStage {
+    palette: KDTree<RGB>,
+    max_iter: Option<usize>,
 }
 
 pub struct GrowthImage {
@@ -71,8 +111,14 @@ pub struct GrowthImage {
 
     pixels: Vec<Option<RGB>>,
     stats: Vec<Option<PerformanceStats>>,
-    palette: KDTree<RGB>,
+
+    stages: Vec<GrowthImageStage>,
+    active_stage: Option<usize>,
+    current_stage_iter: usize,
+
     point_tracker: PointTracker,
+
+    epsilon: f64,
 
     pub done: bool,
 }
@@ -118,16 +164,46 @@ impl GrowthImage {
         }
     }
 
+    fn start_stage(&mut self, stage_index: usize) {
+        // Advance stage number
+        self.active_stage = Some(stage_index);
+        self.current_stage_iter = 0;
+
+        // No frontier on first stage, everything empty
+        if stage_index == 0 && self.point_tracker.frontier_size() == 0 {
+            let first_frontier = self.size.get_random_loc();
+            self.point_tracker.add_to_frontier(first_frontier);
+        }
+    }
+
     fn try_fill(&mut self) -> Option<(PixelLoc, RGB)> {
+        // Start of the first stage
+        if self.active_stage.is_none() {
+            self.start_stage(0);
+        }
+
+        // Check if stage is finished
+        {
+            let active_stage = &self.stages[self.active_stage.unwrap()];
+            let reached_max_stage_iter = match active_stage.max_iter {
+                Some(max_iter) => self.current_stage_iter >= max_iter,
+                None => false,
+            };
+            let empty_palette = active_stage.palette.num_points() == 0;
+
+            if reached_max_stage_iter || empty_palette {
+                let next_stage = self.active_stage.unwrap() + 1;
+                if next_stage < self.stages.len() {
+                    self.start_stage(next_stage);
+                } else {
+                    return None;
+                }
+            }
+        }
+
         // No frontier, everything full
         if self.point_tracker.done {
             return None;
-        }
-
-        // No frontier, everything empty
-        if self.point_tracker.frontier_size() == 0 {
-            let first_frontier = self.size.get_random_loc();
-            self.point_tracker.add_to_frontier(first_frontier);
         }
 
         let point_tracker_index = (self.point_tracker.frontier_size() as f32
@@ -147,12 +223,16 @@ impl GrowthImage {
                 ],
             });
 
-        let res = self.palette.pop_closest(&target_color);
+        let active_stage = &mut self.stages[self.active_stage.unwrap()];
+        let res = active_stage
+            .palette
+            .pop_closest(&target_color, self.epsilon);
         self.stats[next_index] = Some(res.stats);
 
         let next_color = res.res?;
         self.pixels[next_index] = Some(next_color);
 
+        self.current_stage_iter += 1;
         Some((next_loc, next_color))
     }
 

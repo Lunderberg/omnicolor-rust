@@ -157,21 +157,14 @@ impl GrowthImage {
                 i: (self.width as f32 * rand::random::<f32>()) as i32,
                 j: (self.height as f32 * rand::random::<f32>()) as i32,
             };
-            self.point_tracker.add_to_frontier(
-                first_frontier.i as u32,
-                first_frontier.j as u32,
-            );
+            self.point_tracker.add_to_frontier(first_frontier);
         }
 
         let point_tracker_index = (self.point_tracker.frontier_size() as f32
             * rand::random::<f32>()) as usize;
-        let (x, y) = self.point_tracker.get_frontier_point(point_tracker_index);
-        self.point_tracker.fill(x, y);
-
-        let next_loc = PixelLoc {
-            i: x as i32,
-            j: y as i32,
-        };
+        let next_loc =
+            self.point_tracker.get_frontier_point(point_tracker_index);
+        self.point_tracker.fill(next_loc);
 
         let next_index = self.get_index(next_loc)?;
 

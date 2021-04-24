@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
+use crate::common::PixelLoc;
+
 pub struct PointTracker {
-    frontier: Vec<(u32, u32)>,
-    frontier_map: HashMap<(u32, u32), usize>,
+    frontier: Vec<PixelLoc>,
+    frontier_map: HashMap<PixelLoc, usize>,
     used: Vec<bool>,
     width: u32,
     height: u32,
@@ -23,11 +25,11 @@ impl PointTracker {
         }
     }
 
-    pub fn add_to_frontier(&mut self, i: u32, j: u32) {
-        let index = (j * self.width + i) as usize;
+    pub fn add_to_frontier(&mut self, loc: PixelLoc) {
+        let index = (loc.j * (self.width as i32) + loc.i) as usize;
         if !self.used[index] {
-            self.frontier_map.insert((i, j), self.frontier.len());
-            self.frontier.push((i, j));
+            self.frontier_map.insert(loc, self.frontier.len());
+            self.frontier.push(loc);
             self.used[index] = true;
         }
     }
@@ -36,35 +38,41 @@ impl PointTracker {
         self.frontier.len()
     }
 
-    pub fn get_frontier_point(&self, i: usize) -> (u32, u32) {
-        self.frontier[i]
+    pub fn get_frontier_point(&self, index: usize) -> PixelLoc {
+        self.frontier[index]
     }
 
-    pub fn fill(&mut self, i: u32, j: u32) {
+    pub fn fill(&mut self, loc: PixelLoc) {
         let width = self.width as i32;
         let height = self.height as i32;
         (-1..=1)
             .cartesian_product(-1..=1)
-            .map(|(di, dj)| ((i as i32) + di, (j as i32) + dj))
-            .filter(|(i, j)| {
-                (*i >= 0) && (*j >= 0) && (*i < width) && (*j < height)
+            .map(|(di, dj)| PixelLoc {
+                i: loc.i + di,
+                j: loc.j + dj,
             })
-            .for_each(|(i, j)| self.add_to_frontier(i as u32, j as u32));
+            .filter(|adjacent| {
+                (adjacent.i >= 0)
+                    && (adjacent.j >= 0)
+                    && (adjacent.i < width)
+                    && (adjacent.j < height)
+            })
+            .for_each(|adjacent| self.add_to_frontier(adjacent));
 
-        self.remove_from_frontier(i, j);
+        self.remove_from_frontier(loc);
 
         if self.frontier_size() == 0 {
             self.done = true;
         }
     }
 
-    fn remove_from_frontier(&mut self, i: u32, j: u32) {
-        let index = self.frontier_map.get(&(i, j)).map(|i| *i);
+    fn remove_from_frontier(&mut self, loc: PixelLoc) {
+        let index = self.frontier_map.get(&loc).map(|i| *i);
         if let Some(index) = index {
             let last_point = *self.frontier.last().unwrap();
             self.frontier_map.insert(last_point, index);
             self.frontier.swap_remove(index);
-            self.frontier_map.remove(&(i, j));
+            self.frontier_map.remove(&loc);
         }
     }
 }

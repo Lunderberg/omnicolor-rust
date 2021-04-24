@@ -30,7 +30,7 @@ struct Options {
     height: u32,
 
     #[structopt(short, long, default_value = "5.0")]
-    epsilon: f32,
+    epsilon: f64,
 
     #[structopt(short, long,
                 default_value = "uniform",

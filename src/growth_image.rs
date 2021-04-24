@@ -27,7 +27,7 @@ impl Point for RGB {
 
 pub struct GrowthImageBuilder {
     size: RectangularArray,
-    epsilon: f32,
+    epsilon: f64,
     palette: Option<Vec<RGB>>,
 }
 
@@ -40,7 +40,7 @@ impl GrowthImageBuilder {
         }
     }
 
-    pub fn epsilon(mut self, epsilon: f32) -> Self {
+    pub fn epsilon(mut self, epsilon: f64) -> Self {
         self.epsilon = epsilon;
         self
     }

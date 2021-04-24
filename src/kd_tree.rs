@@ -36,7 +36,7 @@ struct Node<T: Point> {
 pub struct KDTree<T: Point> {
     points: Vec<Option<T>>,
     nodes: Vec<Node<T>>,
-    epsilon_plus_1_squared: f64,
+    pub epsilon: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -73,7 +73,7 @@ impl<T> KDTree<T>
 where
     T: Point,
 {
-    pub fn new(mut points: Vec<T>, epsilon: f32) -> Self {
+    pub fn new(mut points: Vec<T>, epsilon: f64) -> Self {
         let mut nodes = Vec::new();
 
         Self::generate_nodes(&mut nodes, &mut points, 0, 0, None);
@@ -83,13 +83,13 @@ where
         KDTree {
             points,
             nodes,
-            epsilon_plus_1_squared: (1.0 + epsilon).powf(2.0).into(),
+            epsilon,
         }
     }
 
     #[cfg(test)]
     pub fn num_points(&self) -> usize {
-        self.points.iter().filter(|p| p.is_some()).count()
+        self.nodes[0].num_points as usize
     }
 
     fn generate_nodes(
@@ -253,7 +253,8 @@ where
                 let res1 = self.get_closest_node(target, *search_first, stats);
                 if res1
                     .filter(|r| {
-                        r.dist2 < diff * diff * self.epsilon_plus_1_squared
+                        let max_dist2 = (diff * (self.epsilon + 1.0)).powf(2.0);
+                        r.dist2 < max_dist2
                     })
                     .is_some()
                 {

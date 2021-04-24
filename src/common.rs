@@ -1,4 +1,7 @@
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[allow(unused_imports)]
+use crate::errors::Error;
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct PixelLoc {
     pub i: i32,
     pub j: i32,
@@ -33,7 +36,8 @@ impl RectangularArray {
         }
     }
 
-    fn _get_loc(&self, index: usize) -> Option<PixelLoc> {
+    #[cfg(test)]
+    fn get_loc(&self, index: usize) -> Option<PixelLoc> {
         if index < self.len() {
             Some(PixelLoc {
                 i: (index % (self.width as usize)) as i32,
@@ -46,5 +50,57 @@ impl RectangularArray {
 
     pub fn len(&self) -> usize {
         (self.width * self.height) as usize
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_index_bounds() -> Result<(), Error> {
+        let size = RectangularArray {
+            width: 5,
+            height: 10,
+        };
+        assert!(size.is_valid(PixelLoc { i: 2, j: 3 }));
+        assert!(size.is_valid(PixelLoc { i: 4, j: 9 }));
+        assert!(size.is_valid(PixelLoc { i: 0, j: 0 }));
+
+        assert!(!size.is_valid(PixelLoc { i: 5, j: 3 }));
+        assert!(!size.is_valid(PixelLoc { i: 2, j: 10 }));
+        assert!(!size.is_valid(PixelLoc { i: 2, j: 15 }));
+        assert!(!size.is_valid(PixelLoc { i: -1, j: 3 }));
+        assert!(!size.is_valid(PixelLoc { i: 5, j: -1 }));
+        assert!(!size.is_valid(PixelLoc { i: 2, j: -1 }));
+        assert!(!size.is_valid(PixelLoc { i: -1, j: -1 }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_lookup() -> Result<(), Error> {
+        let size = RectangularArray {
+            width: 5,
+            height: 10,
+        };
+
+        assert_eq!(size.get_index(PixelLoc { i: 0, j: 0 }), Some(0));
+        assert_eq!(size.get_index(PixelLoc { i: 1, j: 0 }), Some(1));
+        assert_eq!(size.get_index(PixelLoc { i: 0, j: 1 }), Some(5));
+        assert_eq!(size.get_index(PixelLoc { i: 1, j: 1 }), Some(6));
+        assert_eq!(size.get_index(PixelLoc { i: 4, j: 9 }), Some(49));
+
+        assert_eq!(size.get_index(PixelLoc { i: -1, j: 1 }), None);
+        assert_eq!(size.get_index(PixelLoc { i: 4, j: 10 }), None);
+
+        assert_eq!(size.get_loc(0), Some(PixelLoc { i: 0, j: 0 }));
+        assert_eq!(size.get_loc(11), Some(PixelLoc { i: 1, j: 2 }));
+        assert_eq!(size.get_loc(1), Some(PixelLoc { i: 1, j: 0 }));
+
+        assert_eq!(size.get_loc(50), None);
+        assert_eq!(size.get_loc(500000), None);
+
+        Ok(())
     }
 }

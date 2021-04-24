@@ -7,6 +7,51 @@ pub struct PixelLoc {
     pub j: i32,
 }
 
+impl PixelLoc {
+    // Line between two points.  Uses Bresenham's, modified to have no
+    // diagonal openings.
+    pub fn line_to(&self, other: PixelLoc) -> Vec<PixelLoc> {
+        if self.i == other.i {
+            self.vertical_line_to(other.j)
+        } else {
+            self.finite_slope_line_to(other)
+        }
+    }
+
+    fn finite_slope_line_to(&self, other: PixelLoc) -> Vec<PixelLoc> {
+        let slope = ((other.j - self.j) as f64) / ((other.i - self.i) as f64);
+        let offset = (self.j as f64) - slope * (self.i as f64);
+
+        let mut output = Vec::new();
+
+        let mut prev_j = None;
+
+        let imin = self.i.min(other.i);
+        let imax = self.i.max(other.i);
+        for i in imin..=imax {
+            let j1 = (slope * (i as f64) + offset).floor() as i32;
+            let j2 = prev_j.unwrap_or(j1);
+
+            let jmin = j1.min(j2);
+            let jmax = j1.max(j2);
+
+            for j in jmin..=jmax {
+                output.push(PixelLoc { i, j });
+            }
+
+            prev_j = Some(j1);
+        }
+
+        output
+    }
+
+    fn vertical_line_to(&self, other_j: i32) -> Vec<PixelLoc> {
+        let jmin = self.j.min(other_j);
+        let jmax = self.j.max(other_j);
+        (jmin..=jmax).map(|j| PixelLoc { i: self.i, j }).collect()
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct RectangularArray {
     pub width: u32,
@@ -99,6 +144,91 @@ mod test {
 
         assert_eq!(size.get_loc(50), None);
         assert_eq!(size.get_loc(500000), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_to() -> Result<(), Error> {
+        assert_eq!(
+            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 0, j: 0 }),
+            vec![PixelLoc { i: 0, j: 0 }]
+        );
+
+        // Vertical line up
+        assert_eq!(
+            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 0, j: 3 }),
+            vec![
+                PixelLoc { i: 0, j: 0 },
+                PixelLoc { i: 0, j: 1 },
+                PixelLoc { i: 0, j: 2 },
+                PixelLoc { i: 0, j: 3 },
+            ]
+        );
+
+        // Horizontal line right
+        assert_eq!(
+            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 3, j: 0 }),
+            vec![
+                PixelLoc { i: 0, j: 0 },
+                PixelLoc { i: 1, j: 0 },
+                PixelLoc { i: 2, j: 0 },
+                PixelLoc { i: 3, j: 0 },
+            ]
+        );
+
+        // Diagonal line 1:1
+        assert_eq!(
+            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 3, j: 3 }),
+            vec![
+                PixelLoc { i: 0, j: 0 },
+                PixelLoc { i: 1, j: 0 },
+                PixelLoc { i: 1, j: 1 },
+                PixelLoc { i: 2, j: 1 },
+                PixelLoc { i: 2, j: 2 },
+                PixelLoc { i: 3, j: 2 },
+                PixelLoc { i: 3, j: 3 },
+            ]
+        );
+
+        // Slope < 1
+        assert_eq!(
+            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 3, j: 2 }),
+            vec![
+                PixelLoc { i: 0, j: 0 },
+                PixelLoc { i: 1, j: 0 },
+                PixelLoc { i: 2, j: 0 },
+                PixelLoc { i: 2, j: 1 },
+                PixelLoc { i: 3, j: 1 },
+                PixelLoc { i: 3, j: 2 },
+            ]
+        );
+
+        // Slope > 1
+        assert_eq!(
+            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 2, j: 3 }),
+            vec![
+                PixelLoc { i: 0, j: 0 },
+                PixelLoc { i: 1, j: 0 },
+                PixelLoc { i: 1, j: 1 },
+                PixelLoc { i: 2, j: 1 },
+                PixelLoc { i: 2, j: 2 },
+                PixelLoc { i: 2, j: 3 },
+            ]
+        );
+
+        // Off-origin
+        assert_eq!(
+            PixelLoc { i: 1, j: -1 }.line_to(PixelLoc { i: 3, j: 2 }),
+            vec![
+                PixelLoc { i: 1, j: -1 },
+                PixelLoc { i: 2, j: -1 },
+                PixelLoc { i: 2, j: 0 },
+                PixelLoc { i: 3, j: 0 },
+                PixelLoc { i: 3, j: 1 },
+                PixelLoc { i: 3, j: 2 },
+            ]
+        );
 
         Ok(())
     }

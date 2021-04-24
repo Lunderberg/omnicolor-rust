@@ -9,6 +9,7 @@ pub mod palettes;
 mod point_tracker;
 
 pub use color::RGB;
+pub use common::PixelLoc;
 pub use errors::Error;
 pub use growth_image_builder::GrowthImageBuilder;
 pub use palettes::*;

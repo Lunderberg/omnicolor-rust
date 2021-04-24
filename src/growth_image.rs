@@ -21,7 +21,7 @@ impl Point for RGB {
         self.vals
             .iter()
             .zip(other.vals.iter())
-            .map(|(a, b)| ((*a as f64) - (*b as f64)).powf(2.0))
+            .map(|(&a, &b)| ((a as f64) - (b as f64)).powf(2.0))
             .sum()
     }
 }
@@ -48,6 +48,7 @@ pub struct GrowthImageStage {
     pub(crate) grow_from_previous: bool,
     pub(crate) selected_seed_points: Vec<PixelLoc>,
     pub(crate) num_random_seed_points: u32,
+    pub(crate) forbidden_points: Vec<PixelLoc>,
 }
 
 impl GrowthImage {
@@ -63,7 +64,7 @@ impl GrowthImage {
     pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {
         let (count, rsum, gsum, bsum) = (-1..=1)
             .cartesian_product(-1..=1)
-            .filter(|(di, dj)| (*di != 0) || (*dj != 0))
+            .filter(|&(di, dj)| (di != 0) || (dj != 0))
             .map(|(di, dj)| PixelLoc {
                 i: loc.i + di,
                 j: loc.j + dj,
@@ -112,37 +113,39 @@ impl GrowthImage {
         // Advance stage number
         self.active_stage = Some(stage_index);
         self.current_stage_iter = 0;
-
-        // Overkill at this point to remake the PointTracker, since we
-        // could instead just clear the frontier when needed.  Once
-        // forbidden points and portals are added, though, the
-        // recalculating will be necessary.
-        let mut point_tracker = PointTracker::new(self.size);
         let active_stage = &self.stages[stage_index];
 
+        // Remake the PointTracker, so that we can clear any forbidden
+        // points from the previous stage, as well as removing any
+        // newly forbidden points from the frontier.
+        let mut point_tracker = PointTracker::new(self.size);
+
+        // All filled pixels are either forbidden, or forbidden with a
+        // frontier.
         let filled_locs = self
             .pixels
             .iter()
             .enumerate()
             .filter(|(_i, p)| p.is_some())
-            .flat_map(|(i, _p)| self.size.get_loc(i))
-            .collect::<Vec<_>>();
+            .flat_map(|(i, _p)| self.size.get_loc(i));
 
         if active_stage.grow_from_previous {
-            filled_locs
-                .into_iter()
-                .for_each(|loc| point_tracker.fill(loc));
+            filled_locs.for_each(|loc| point_tracker.fill(loc));
         } else {
-            filled_locs
-                .into_iter()
-                .for_each(|loc| point_tracker.mark_as_used(loc));
+            filled_locs.for_each(|loc| point_tracker.mark_as_used(loc));
         };
+
+        // Any additionally specified pixels are forbidden
+        active_stage
+            .forbidden_points
+            .iter()
+            .for_each(|&loc| point_tracker.mark_as_used(loc));
 
         // Add in any selected seed points
         active_stage
             .selected_seed_points
             .iter()
-            .for_each(|loc| point_tracker.add_to_frontier(*loc));
+            .for_each(|&loc| point_tracker.add_to_frontier(loc));
 
         // Randomly pick N seed points from those remaining.
         // Implementation assumes that N is relatively small, may be

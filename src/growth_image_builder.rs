@@ -73,6 +73,8 @@ pub struct GrowthImageStageBuilder {
     selected_seed_points: Option<Vec<PixelLoc>>,
     grow_from_previous: Option<bool>,
     is_first_stage: bool,
+
+    forbidden_points: Vec<PixelLoc>,
 }
 
 impl GrowthImageStageBuilder {
@@ -84,6 +86,7 @@ impl GrowthImageStageBuilder {
             selected_seed_points: None,
             grow_from_previous: None,
             is_first_stage: stage_i == 0,
+            forbidden_points: Vec::new(),
         }
     }
 
@@ -118,6 +121,14 @@ impl GrowthImageStageBuilder {
         self
     }
 
+    pub fn forbidden_points(
+        &mut self,
+        forbidden_points: Vec<PixelLoc>,
+    ) -> &mut Self {
+        self.forbidden_points = forbidden_points;
+        self
+    }
+
     fn build(self) -> GrowthImageStage {
         let num_random_seed_points = match self.num_random_seed_points {
             Some(n) => n,
@@ -143,6 +154,7 @@ impl GrowthImageStageBuilder {
             grow_from_previous: self.grow_from_previous.unwrap_or(true),
             selected_seed_points,
             num_random_seed_points,
+            forbidden_points: self.forbidden_points,
         }
     }
 }

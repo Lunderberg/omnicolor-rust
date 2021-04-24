@@ -68,7 +68,7 @@ fn main() -> Result<(), Error> {
         "[{pos}/{len}] {wide_bar} [{elapsed_precise}, ETA: {eta_precise}]",
     ));
     bar.set_draw_rate(10);
-    while !image.done {
+    while !image.is_done() {
         image.fill();
         bar.inc(1);
     }

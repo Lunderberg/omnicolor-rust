@@ -4,7 +4,6 @@ use itertools::Itertools;
 
 use crate::color::RGB;
 use crate::common::{PixelLoc, RectangularArray};
-use crate::errors::Error;
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
 
@@ -25,108 +24,34 @@ impl Point for RGB {
     }
 }
 
-pub struct GrowthImageBuilder {
-    size: RectangularArray,
-    epsilon: f64,
-    stages: Vec<GrowthImageStageBuilder>,
-}
-
-impl GrowthImageBuilder {
-    pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            size: RectangularArray { width, height },
-            epsilon: 1.0,
-            stages: Vec::new(),
-        }
-    }
-
-    pub fn add_stage(mut self, stage: GrowthImageStageBuilder) -> Self {
-        self.stages.push(stage);
-        self
-    }
-
-    pub fn epsilon(mut self, epsilon: f64) -> Self {
-        self.epsilon = epsilon;
-        self
-    }
-
-    pub fn palette(self, palette: Vec<RGB>) -> Self {
-        self.add_stage(GrowthImageStageBuilder {
-            palette,
-            ..Default::default()
-        })
-    }
-
-    pub fn build(self) -> Result<GrowthImage, Error> {
-        if self.stages.len() == 0 {
-            return Err(Error::NoStagesDefined);
-        }
-
-        let pixels = vec![None; self.size.len()];
-        let stats = vec![None; self.size.len()];
-        Ok(GrowthImage {
-            size: self.size,
-            pixels,
-            stats,
-            epsilon: self.epsilon,
-            stages: self.stages.into_iter().map(|s| s.build()).collect(),
-            active_stage: None,
-            current_stage_iter: 0,
-            point_tracker: PointTracker::new(self.size),
-            done: false,
-        })
-    }
-}
-
-pub struct GrowthImageStageBuilder {
-    pub palette: Vec<RGB>,
-    pub max_iter: Option<usize>,
-}
-
-impl Default for GrowthImageStageBuilder {
-    fn default() -> Self {
-        Self {
-            palette: Vec::new(),
-            max_iter: None,
-        }
-    }
-}
-
-impl GrowthImageStageBuilder {
-    fn build(self) -> GrowthImageStage {
-        GrowthImageStage {
-            palette: KDTree::new(self.palette),
-            max_iter: self.max_iter,
-        }
-    }
-}
-
-struct GrowthImageStage {
-    palette: KDTree<RGB>,
-    max_iter: Option<usize>,
-}
-
 pub struct GrowthImage {
-    size: RectangularArray,
+    pub(crate) size: RectangularArray,
+    pub(crate) pixels: Vec<Option<RGB>>,
+    pub(crate) stats: Vec<Option<PerformanceStats>>,
 
-    pixels: Vec<Option<RGB>>,
-    stats: Vec<Option<PerformanceStats>>,
+    pub(crate) stages: Vec<GrowthImageStage>,
+    pub(crate) active_stage: Option<usize>,
+    pub(crate) current_stage_iter: usize,
 
-    stages: Vec<GrowthImageStage>,
-    active_stage: Option<usize>,
-    current_stage_iter: usize,
+    pub(crate) point_tracker: PointTracker,
+    pub(crate) epsilon: f64,
 
-    point_tracker: PointTracker,
+    pub(crate) is_done: bool,
+}
 
-    epsilon: f64,
-
-    pub done: bool,
+pub struct GrowthImageStage {
+    pub(crate) palette: KDTree<RGB>,
+    pub(crate) max_iter: Option<usize>,
 }
 
 impl GrowthImage {
+    pub fn is_done(&self) -> bool {
+        self.is_done
+    }
+
     pub fn fill(&mut self) {
         let res = self.try_fill();
-        self.done = res.is_none();
+        self.is_done = res.is_none();
     }
 
     pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {

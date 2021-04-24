@@ -4,7 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use structopt::StructOpt;
 
 use omnicolor_rust::palettes::generate_spherical_palette;
-use omnicolor_rust::{Error, GrowthImageBuilder, GrowthImageStageBuilder, RGB};
+use omnicolor_rust::{Error, GrowthImageBuilder, RGB};
 
 #[derive(Debug, StructOpt)]
 struct Options {
@@ -61,24 +61,23 @@ fn main() -> Result<(), Error> {
         opt.color_radius,
     );
 
-    let mut image = GrowthImageBuilder::new(opt.width, opt.height)
-        .add_stage(GrowthImageStageBuilder {
-            palette: first_palette,
-            max_iter: Some(num_pixels_first),
-        })
-        .add_stage(GrowthImageStageBuilder {
-            palette: second_palette,
-            ..Default::default()
-        })
-        .epsilon(5.0)
-        .build()?;
+    let mut builder =
+        GrowthImageBuilder::new(opt.width, opt.height).epsilon(5.0);
+
+    builder
+        .new_stage()
+        .palette(first_palette)
+        .max_iter(num_pixels_first);
+    builder.new_stage().palette(second_palette);
+
+    let mut image = builder.build()?;
 
     let bar = ProgressBar::new((opt.width * opt.height).into());
     bar.set_style(ProgressStyle::default_bar().template(
         "[{pos}/{len}] {wide_bar} [{elapsed_precise}, ETA: {eta_precise}]",
     ));
     bar.set_draw_rate(10);
-    while !image.done {
+    while !image.is_done() {
         image.fill();
         bar.inc(1);
     }

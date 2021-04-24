@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use itertools::Itertools;
 
 use crate::color::RGB;
+use crate::common::PixelLoc;
 use crate::errors::Error;
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
@@ -81,24 +82,24 @@ pub struct GrowthImage {
 }
 
 impl GrowthImage {
-    fn get_index(&self, i: i32, j: i32) -> Option<usize> {
-        if (i >= 0)
-            && (j >= 0)
-            && (i < self.width as i32)
-            && (j < self.height as i32)
+    fn get_index(&self, loc: PixelLoc) -> Option<usize> {
+        if (loc.i >= 0)
+            && (loc.j >= 0)
+            && (loc.i < self.width as i32)
+            && (loc.j < self.height as i32)
         {
-            Some((j as usize) * (self.width as usize) + (i as usize))
+            Some((loc.j as usize) * (self.width as usize) + (loc.i as usize))
         } else {
             None
         }
     }
 
-    fn _get_xy(&self, index: usize) -> Option<(u32, u32)> {
+    fn _get_xy(&self, index: usize) -> Option<PixelLoc> {
         if index < self.pixels.len() {
-            Some((
-                (index % (self.width as usize)) as u32,
-                (index / (self.width as usize)) as u32,
-            ))
+            Some(PixelLoc {
+                i: (index % (self.width as usize)) as i32,
+                j: (index / (self.width as usize)) as i32,
+            })
         } else {
             None
         }
@@ -109,14 +110,15 @@ impl GrowthImage {
         self.done = res.is_none();
     }
 
-    pub fn get_adjacent_color(&self, i: u32, j: u32) -> Option<RGB> {
-        let i = i as i32;
-        let j = j as i32;
-
+    pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {
         let (count, rsum, gsum, bsum) = (-1..=1)
             .cartesian_product(-1..=1)
             .filter(|(di, dj)| (*di != 0) || (*dj != 0))
-            .flat_map(|(di, dj)| self.get_index(i + di, j + dj))
+            .map(|(di, dj)| PixelLoc {
+                i: loc.i + di,
+                j: loc.j + dj,
+            })
+            .flat_map(|loc| self.get_index(loc))
             .flat_map(|index| self.pixels[index])
             .fold(
                 (0u32, 0u32, 0u32, 0u32),
@@ -143,7 +145,7 @@ impl GrowthImage {
         }
     }
 
-    fn try_fill(&mut self) -> Option<(u32, u32, RGB)> {
+    fn try_fill(&mut self) -> Option<(PixelLoc, RGB)> {
         // No frontier, everything full
         if self.point_tracker.done {
             return None;
@@ -151,9 +153,14 @@ impl GrowthImage {
 
         // No frontier, everything empty
         if self.point_tracker.frontier_size() == 0 {
-            let i = (self.width as f32 * rand::random::<f32>()) as u32;
-            let j = (self.height as f32 * rand::random::<f32>()) as u32;
-            self.point_tracker.add_to_frontier(i, j);
+            let first_frontier = PixelLoc {
+                i: (self.width as f32 * rand::random::<f32>()) as i32,
+                j: (self.height as f32 * rand::random::<f32>()) as i32,
+            };
+            self.point_tracker.add_to_frontier(
+                first_frontier.i as u32,
+                first_frontier.j as u32,
+            );
         }
 
         let point_tracker_index = (self.point_tracker.frontier_size() as f32
@@ -161,10 +168,15 @@ impl GrowthImage {
         let (x, y) = self.point_tracker.get_frontier_point(point_tracker_index);
         self.point_tracker.fill(x, y);
 
-        let next_index = self.get_index(x as i32, y as i32)?;
+        let next_loc = PixelLoc {
+            i: x as i32,
+            j: y as i32,
+        };
+
+        let next_index = self.get_index(next_loc)?;
 
         let target_color =
-            self.get_adjacent_color(x, y).unwrap_or_else(|| RGB {
+            self.get_adjacent_color(next_loc).unwrap_or_else(|| RGB {
                 vals: [
                     rand::random::<u8>(),
                     rand::random::<u8>(),
@@ -178,7 +190,7 @@ impl GrowthImage {
         let next_color = res.res?;
         self.pixels[next_index] = Some(next_color);
 
-        Some((x, y, next_color))
+        Some((next_loc, next_color))
     }
 
     pub fn write(&self, filename: &PathBuf) {

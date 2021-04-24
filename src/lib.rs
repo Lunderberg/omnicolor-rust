@@ -1,6 +1,7 @@
 mod errors;
 
 mod color;
+mod common;
 mod growth_image;
 mod kd_tree;
 pub mod palettes;

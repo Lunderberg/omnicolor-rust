@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use itertools::Itertools;
+use rand::distributions::Distribution;
 
 use crate::color::RGB;
 use crate::common::{PixelLoc, RectangularArray};
@@ -28,6 +30,7 @@ pub struct GrowthImage {
     pub(crate) size: RectangularArray,
     pub(crate) pixels: Vec<Option<RGB>>,
     pub(crate) stats: Vec<Option<PerformanceStats>>,
+    pub(crate) num_filled_pixels: usize,
 
     pub(crate) stages: Vec<GrowthImageStage>,
     pub(crate) active_stage: Option<usize>,
@@ -42,6 +45,9 @@ pub struct GrowthImage {
 pub struct GrowthImageStage {
     pub(crate) palette: KDTree<RGB>,
     pub(crate) max_iter: Option<usize>,
+    pub(crate) grow_from_previous: bool,
+    pub(crate) selected_seed_points: Vec<PixelLoc>,
+    pub(crate) num_random_seed_points: u32,
 }
 
 impl GrowthImage {
@@ -89,16 +95,84 @@ impl GrowthImage {
         }
     }
 
+    fn current_stage_finished(&self) -> bool {
+        let active_stage = &self.stages[self.active_stage.unwrap()];
+        let reached_max_stage_iter = match active_stage.max_iter {
+            Some(max_iter) => self.current_stage_iter >= max_iter,
+            None => false,
+        };
+        let empty_palette = active_stage.palette.num_points() == 0;
+
+        let empty_frontier = self.point_tracker.is_done();
+
+        reached_max_stage_iter || empty_palette || empty_frontier
+    }
+
     fn start_stage(&mut self, stage_index: usize) {
         // Advance stage number
         self.active_stage = Some(stage_index);
         self.current_stage_iter = 0;
 
-        // No frontier on first stage, everything empty
-        if stage_index == 0 && self.point_tracker.frontier_size() == 0 {
-            let first_frontier = self.size.get_random_loc();
-            self.point_tracker.add_to_frontier(first_frontier);
+        // Overkill at this point to remake the PointTracker, since we
+        // could instead just clear the frontier when needed.  Once
+        // forbidden points and portals are added, though, the
+        // recalculating will be necessary.
+        let mut point_tracker = PointTracker::new(self.size);
+        let active_stage = &self.stages[stage_index];
+
+        let filled_locs = self
+            .pixels
+            .iter()
+            .enumerate()
+            .filter(|(_i, p)| p.is_some())
+            .flat_map(|(i, _p)| self.size.get_loc(i))
+            .collect::<Vec<_>>();
+
+        if active_stage.grow_from_previous {
+            filled_locs
+                .into_iter()
+                .for_each(|loc| point_tracker.fill(loc));
+        } else {
+            filled_locs
+                .into_iter()
+                .for_each(|loc| point_tracker.mark_as_used(loc));
+        };
+
+        // Add in any selected seed points
+        active_stage
+            .selected_seed_points
+            .iter()
+            .for_each(|loc| point_tracker.add_to_frontier(*loc));
+
+        // Randomly pick N seed points from those remaining.
+        // Implementation assumes that N is relatively small, may be
+        // inefficient for large N.
+        let num_unfilled_pixels = self.pixels.len() - self.num_filled_pixels;
+        let num_random = usize::min(
+            active_stage.num_random_seed_points as usize,
+            num_unfilled_pixels,
+        );
+        if num_random > 0 {
+            let mut indices = HashSet::new();
+            let mut rng = rand::thread_rng();
+            let distribution =
+                rand::distributions::Uniform::from(0..num_unfilled_pixels);
+            while indices.len() < num_random {
+                indices.insert(distribution.sample(&mut rng));
+            }
+            self.pixels
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (self.size.get_loc(i).unwrap(), p))
+                .filter(|(_loc, p)| p.is_none())
+                .map(|(loc, _p)| loc)
+                .enumerate()
+                .filter(|(i, _loc)| indices.contains(i))
+                .for_each(|(_i, loc)| point_tracker.add_to_frontier(loc));
         }
+
+        // Set the new point tracker as the one to use
+        self.point_tracker = point_tracker;
     }
 
     fn try_fill(&mut self) -> Option<(PixelLoc, RGB)> {
@@ -107,28 +181,14 @@ impl GrowthImage {
             self.start_stage(0);
         }
 
-        // Check if stage is finished
-        {
-            let active_stage = &self.stages[self.active_stage.unwrap()];
-            let reached_max_stage_iter = match active_stage.max_iter {
-                Some(max_iter) => self.current_stage_iter >= max_iter,
-                None => false,
-            };
-            let empty_palette = active_stage.palette.num_points() == 0;
-
-            if reached_max_stage_iter || empty_palette {
-                let next_stage = self.active_stage.unwrap() + 1;
-                if next_stage < self.stages.len() {
-                    self.start_stage(next_stage);
-                } else {
-                    return None;
-                }
+        // Advance to the next stage, if needed.
+        while self.current_stage_finished() {
+            let next_stage = self.active_stage.unwrap() + 1;
+            if next_stage < self.stages.len() {
+                self.start_stage(next_stage);
+            } else {
+                return None;
             }
-        }
-
-        // No frontier, everything full
-        if self.point_tracker.done {
-            return None;
         }
 
         let point_tracker_index = (self.point_tracker.frontier_size() as f32
@@ -158,6 +218,8 @@ impl GrowthImage {
         self.pixels[next_index] = Some(next_color);
 
         self.current_stage_iter += 1;
+        self.num_filled_pixels += 1;
+
         Some((next_loc, next_color))
     }
 

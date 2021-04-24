@@ -29,15 +29,14 @@ impl RectangularArray {
         }
     }
 
-    pub fn get_random_loc(&self) -> PixelLoc {
+    pub fn _get_random_loc(&self) -> PixelLoc {
         PixelLoc {
             i: (self.width as f32 * rand::random::<f32>()) as i32,
             j: (self.height as f32 * rand::random::<f32>()) as i32,
         }
     }
 
-    #[cfg(test)]
-    fn get_loc(&self, index: usize) -> Option<PixelLoc> {
+    pub fn get_loc(&self, index: usize) -> Option<PixelLoc> {
         if index < self.len() {
             Some(PixelLoc {
                 i: (index % (self.width as usize)) as i32,

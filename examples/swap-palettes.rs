@@ -35,6 +35,12 @@ struct Options {
 
     #[structopt(long, default_value = "50")]
     color_radius: f32,
+
+    #[structopt(long)]
+    reset_frontier_for_second: bool,
+
+    #[structopt(long)]
+    num_additional_seeds: Option<u32>,
 }
 
 fn main() -> Result<(), Error> {
@@ -68,7 +74,14 @@ fn main() -> Result<(), Error> {
         .new_stage()
         .palette(first_palette)
         .max_iter(num_pixels_first);
-    builder.new_stage().palette(second_palette);
+
+    let stage_builder = builder
+        .new_stage()
+        .palette(second_palette)
+        .grow_from_previous(!opt.reset_frontier_for_second);
+    if let Some(random_seeds) = opt.num_additional_seeds {
+        stage_builder.num_random_seed_points(random_seeds);
+    }
 
     let mut image = builder.build()?;
 

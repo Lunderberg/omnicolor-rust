@@ -9,7 +9,6 @@ pub struct PointTracker {
     frontier_map: HashMap<PixelLoc, usize>,
     used: Vec<bool>,
     size: RectangularArray,
-    pub done: bool,
 }
 
 impl PointTracker {
@@ -19,7 +18,6 @@ impl PointTracker {
             frontier: Vec::new(),
             frontier_map: HashMap::new(),
             used: vec![false; size.len()],
-            done: false,
         }
     }
 
@@ -32,6 +30,17 @@ impl PointTracker {
                 self.used[index] = true;
             }
         }
+    }
+
+    pub fn mark_as_used(&mut self, loc: PixelLoc) {
+        let index = self.size.get_index(loc);
+        if let Some(index) = index {
+            self.used[index] = true;
+        }
+    }
+
+    pub fn is_done(&self) -> bool {
+        return self.frontier.len() == 0;
     }
 
     pub fn frontier_size(&self) -> usize {
@@ -54,10 +63,6 @@ impl PointTracker {
             .for_each(|adjacent| self.add_to_frontier(adjacent));
 
         self.remove_from_frontier(loc);
-
-        if self.frontier_size() == 0 {
-            self.done = true;
-        }
     }
 
     fn remove_from_frontier(&mut self, loc: PixelLoc) {

@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 #[allow(unused_imports)]
 use crate::errors::Error;
 
@@ -72,6 +74,20 @@ impl RectangularArray {
         } else {
             None
         }
+    }
+
+    pub fn iter_adjacent(
+        &self,
+        loc: PixelLoc,
+    ) -> impl Iterator<Item = PixelLoc> + '_ {
+        (-1..=1)
+            .cartesian_product(-1..=1)
+            .filter(|&(di, dj)| (di != 0) || (dj != 0))
+            .map(move |(di, dj)| PixelLoc {
+                i: loc.i + di,
+                j: loc.j + dj,
+            })
+            .filter(move |&loc| self.is_valid(loc))
     }
 
     pub fn _get_random_loc(&self) -> PixelLoc {

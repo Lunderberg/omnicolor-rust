@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use itertools::Itertools;
 use rand::distributions::Distribution;
 
 use crate::color::RGB;
@@ -62,13 +61,9 @@ impl GrowthImage {
     }
 
     pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {
-        let (count, rsum, gsum, bsum) = (-1..=1)
-            .cartesian_product(-1..=1)
-            .filter(|&(di, dj)| (di != 0) || (dj != 0))
-            .map(|(di, dj)| PixelLoc {
-                i: loc.i + di,
-                j: loc.j + dj,
-            })
+        let (count, rsum, gsum, bsum) = self
+            .size
+            .iter_adjacent(loc)
             .flat_map(|loc| self.size.get_index(loc))
             .flat_map(|index| self.pixels[index])
             .fold(

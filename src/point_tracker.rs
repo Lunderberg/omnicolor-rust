@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use itertools::Itertools;
-
 use crate::common::{PixelLoc, RectangularArray};
 
 pub struct PointTracker {
@@ -53,13 +51,7 @@ impl PointTracker {
 
     pub fn fill(&mut self, loc: PixelLoc) {
         let size = self.size;
-        (-1..=1)
-            .cartesian_product(-1..=1)
-            .map(|(di, dj)| PixelLoc {
-                i: loc.i + di,
-                j: loc.j + dj,
-            })
-            .filter(|adjacent| size.is_valid(*adjacent))
+        size.iter_adjacent(loc)
             .for_each(|adjacent| self.add_to_frontier(adjacent));
 
         self.remove_from_frontier(loc);

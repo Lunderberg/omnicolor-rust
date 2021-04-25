@@ -7,6 +7,10 @@ edition = "2018"
 [profile.release]
 debug = true
 
+[[bench]]
+name = "benchmarks"
+harness = false
+
 [dependencies]
 num-traits = "0.2"
 png = "0.16.8"
@@ -16,6 +20,7 @@ rand = "0.8.3"
 [dev-dependencies]
 structopt = "0.3.21"
 clap = "*"
+criterion = {version = "0.3", features=['html_reports']}
 
 # Latest indicatif version as of 2021-04-17 is 0.15.0, which doesn't
 # have set_draw_rate.  Once 0.16.0 is out, should use it instead.

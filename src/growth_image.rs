@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use rand::distributions::Distribution;
+use rand::Rng;
 
 use crate::color::RGB;
 use crate::common::{PixelLoc, RectangularArray};
@@ -37,6 +38,7 @@ pub struct GrowthImage {
 
     pub(crate) point_tracker: PointTracker,
     pub(crate) epsilon: f64,
+    pub(crate) rng: rand_chacha::ChaCha8Rng,
 
     pub(crate) is_done: bool,
 }
@@ -152,11 +154,10 @@ impl GrowthImage {
         );
         if num_random > 0 {
             let mut indices = HashSet::new();
-            let mut rng = rand::thread_rng();
             let distribution =
                 rand::distributions::Uniform::from(0..num_unfilled_pixels);
             while indices.len() < num_random {
-                indices.insert(distribution.sample(&mut rng));
+                indices.insert(distribution.sample(&mut self.rng));
             }
             self.pixels
                 .iter()
@@ -190,7 +191,7 @@ impl GrowthImage {
         }
 
         let point_tracker_index = (self.point_tracker.frontier_size() as f32
-            * rand::random::<f32>()) as usize;
+            * self.rng.gen::<f32>()) as usize;
         let next_loc =
             self.point_tracker.get_frontier_point(point_tracker_index);
         self.point_tracker.fill(next_loc);
@@ -200,9 +201,9 @@ impl GrowthImage {
         let target_color =
             self.get_adjacent_color(next_loc).unwrap_or_else(|| RGB {
                 vals: [
-                    rand::random::<u8>(),
-                    rand::random::<u8>(),
-                    rand::random::<u8>(),
+                    self.rng.gen::<u8>(),
+                    self.rng.gen::<u8>(),
+                    self.rng.gen::<u8>(),
                 ],
             });
 

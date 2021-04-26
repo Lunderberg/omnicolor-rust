@@ -6,26 +6,17 @@
 // [dev-dependencies]
 // criterion = {version = "0.3", features=['html_reports']}
 
-use criterion::{
-    black_box, criterion_group, criterion_main, Bencher, Criterion,
-};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
-use omnicolor_rust::palettes::generate_uniform_palette;
+use omnicolor_rust::palettes::UniformPalette;
 use omnicolor_rust::GrowthImageBuilder;
 
 fn generate_flat_image(b: &mut Bencher) {
-    let width = black_box(1920);
-    let height = black_box(1080);
-    let epsilon = black_box(5.0);
-
-    let palette = generate_uniform_palette(width * height);
+    let mut builder = GrowthImageBuilder::new(1920, 1080);
+    builder.epsilon(5.0).palette(UniformPalette);
 
     b.iter(|| {
-        let mut image = GrowthImageBuilder::new(width, height)
-            .epsilon(epsilon)
-            .palette(palette.clone())
-            .build()
-            .unwrap();
+        let mut image = builder.build().unwrap();
         while !image.is_done() {
             image.fill();
         }

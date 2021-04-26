@@ -90,13 +90,6 @@ impl RectangularArray {
             .filter(move |&loc| self.is_valid(loc))
     }
 
-    pub fn _get_random_loc(&self) -> PixelLoc {
-        PixelLoc {
-            i: (self.width as f32 * rand::random::<f32>()) as i32,
-            j: (self.height as f32 * rand::random::<f32>()) as i32,
-        }
-    }
-
     pub fn get_loc(&self, index: usize) -> Option<PixelLoc> {
         if index < self.len() {
             Some(PixelLoc {

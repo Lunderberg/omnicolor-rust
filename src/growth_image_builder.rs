@@ -1,14 +1,17 @@
-use crate::color::RGB;
+use rand::{Rng, SeedableRng};
+
 use crate::common::{PixelLoc, RectangularArray};
 use crate::errors::Error;
 use crate::growth_image::{GrowthImage, GrowthImageStage};
 use crate::kd_tree::KDTree;
+use crate::palettes::{Palette, UniformPalette};
 use crate::point_tracker::PointTracker;
 
 pub struct GrowthImageBuilder {
     size: RectangularArray,
     epsilon: f64,
     stages: Vec<GrowthImageStageBuilder>,
+    seed: Option<u64>,
 }
 
 impl GrowthImageBuilder {
@@ -17,6 +20,7 @@ impl GrowthImageBuilder {
             size: RectangularArray { width, height },
             epsilon: 1.0,
             stages: Vec::new(),
+            seed: None,
         }
     }
 
@@ -26,24 +30,42 @@ impl GrowthImageBuilder {
         self.stages.last_mut().unwrap()
     }
 
-    pub fn epsilon(mut self, epsilon: f64) -> Self {
+    pub fn epsilon(&mut self, epsilon: f64) -> &mut Self {
         self.epsilon = epsilon;
         self
     }
 
-    pub fn palette(mut self, palette: Vec<RGB>) -> Self {
+    pub fn palette<T>(&mut self, palette: T) -> &mut Self
+    where
+        T: Palette + Sized + 'static,
+    {
         self.new_stage().palette(palette);
         self
     }
 
-    pub fn build(self) -> Result<GrowthImage, Error> {
+    pub fn seed(&mut self, seed: u64) -> &mut Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    pub fn build(&self) -> Result<GrowthImage, Error> {
         if self.stages.len() == 0 {
             return Err(Error::NoStagesDefined);
         }
 
+        let mut rng = match self.seed {
+            Some(seed) => rand_chacha::ChaCha8Rng::seed_from_u64(seed),
+            None => rand_chacha::ChaCha8Rng::from_entropy(),
+        };
+
         let pixels = vec![None; self.size.len()];
         let stats = vec![None; self.size.len()];
-        let stages = self.stages.into_iter().map(|s| s.build()).collect();
+        let stages = self
+            .stages
+            .iter()
+            .map(|s| s.build(&self.size, &mut rng))
+            .collect();
+
         Ok(GrowthImage {
             size: self.size,
             pixels,
@@ -55,12 +77,15 @@ impl GrowthImageBuilder {
             point_tracker: PointTracker::new(self.size),
             is_done: false,
             num_filled_pixels: 0,
+            rng,
         })
     }
 }
 
 pub struct GrowthImageStageBuilder {
-    palette: Vec<RGB>,
+    palette: Box<dyn Palette>,
+    n_colors: Option<u32>,
+
     max_iter: Option<usize>,
 
     // For these four, track whether the user explicitly requested
@@ -80,7 +105,8 @@ pub struct GrowthImageStageBuilder {
 impl GrowthImageStageBuilder {
     fn new(stage_i: usize) -> Self {
         Self {
-            palette: Vec::new(),
+            palette: Box::new(UniformPalette),
+            n_colors: None,
             max_iter: None,
             num_random_seed_points: None,
             selected_seed_points: None,
@@ -90,8 +116,16 @@ impl GrowthImageStageBuilder {
         }
     }
 
-    pub fn palette(&mut self, palette: Vec<RGB>) -> &mut Self {
-        self.palette = palette;
+    pub fn palette<T>(&mut self, palette: T) -> &mut Self
+    where
+        T: Palette + Sized + 'static,
+    {
+        self.palette = Box::new(palette);
+        self
+    }
+
+    pub fn n_colors(&mut self, n_colors: u32) -> &mut Self {
+        self.n_colors = Some(n_colors);
         self
     }
 
@@ -129,7 +163,11 @@ impl GrowthImageStageBuilder {
         self
     }
 
-    fn build(self) -> GrowthImageStage {
+    fn build(
+        &self,
+        size: &RectangularArray,
+        rng: &mut impl Rng,
+    ) -> GrowthImageStage {
         let num_random_seed_points = match self.num_random_seed_points {
             Some(n) => n,
             None => {
@@ -145,16 +183,21 @@ impl GrowthImageStageBuilder {
             }
         };
 
-        let selected_seed_points =
-            self.selected_seed_points.unwrap_or_else(Vec::new);
+        let selected_seed_points = match self.selected_seed_points.as_ref() {
+            Some(points) => points.clone(),
+            None => Vec::new(),
+        };
+
+        let n_colors = self.n_colors.unwrap_or(size.len() as u32);
+        let palette = KDTree::new(self.palette.generate(n_colors, rng));
 
         GrowthImageStage {
-            palette: KDTree::new(self.palette),
+            palette: palette,
             max_iter: self.max_iter,
             grow_from_previous: self.grow_from_previous.unwrap_or(true),
             selected_seed_points,
             num_random_seed_points,
-            forbidden_points: self.forbidden_points,
+            forbidden_points: self.forbidden_points.clone(),
         }
     }
 }

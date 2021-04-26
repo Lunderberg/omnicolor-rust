@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use indicatif::{ProgressBar, ProgressStyle};
 use structopt::StructOpt;
 
-use omnicolor_rust::palettes::generate_spherical_palette;
+use omnicolor_rust::palettes::*;
 use omnicolor_rust::{Error, GrowthImageBuilder, PixelLoc, RGB};
 
 #[derive(Debug, StructOpt)]
@@ -67,28 +67,32 @@ fn main() -> Result<(), Error> {
     let num_pixels_second =
         (opt.width * opt.height) as usize - num_pixels_first;
 
+    // The number of colors to generate can be automatically
+    // determined from the size of the image, or can be specified
+    // directly.  A stage ends either when the palette runs out of
+    // colors, when the max number of pixels for that stage is
+    // reached, or when no further pixels are available to be filled.
     let num_colors_first =
         ((num_pixels_first as f32) * opt.proportion_excess_colors) as u32;
     let num_colors_second =
         ((num_pixels_second as f32) * opt.proportion_excess_colors) as u32;
 
-    let first_palette = generate_spherical_palette(
-        num_colors_first,
-        opt.first_color,
-        opt.color_radius,
-    );
-    let second_palette = generate_spherical_palette(
-        num_colors_second,
-        opt.second_color,
-        opt.color_radius,
-    );
+    let first_palette = SphericalPalette {
+        central_color: opt.first_color,
+        color_radius: opt.color_radius,
+    };
+    let second_palette = SphericalPalette {
+        central_color: opt.second_color,
+        color_radius: opt.color_radius,
+    };
 
-    let mut builder =
-        GrowthImageBuilder::new(opt.width, opt.height).epsilon(5.0);
+    let mut builder = GrowthImageBuilder::new(opt.width, opt.height);
+    builder.epsilon(5.0);
 
     let stage_builder = builder
         .new_stage()
         .palette(first_palette)
+        .n_colors(num_colors_first)
         .max_iter(num_pixels_first);
 
     if opt.initial_point.len() == 2 {
@@ -107,6 +111,7 @@ fn main() -> Result<(), Error> {
     let stage_builder = builder
         .new_stage()
         .palette(second_palette)
+        .n_colors(num_colors_second)
         .grow_from_previous(!opt.reset_frontier_for_second);
     if let Some(random_seeds) = opt.num_additional_seeds {
         stage_builder.num_random_seed_points(random_seeds);

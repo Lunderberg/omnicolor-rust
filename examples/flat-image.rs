@@ -20,6 +20,9 @@ struct Options {
     #[structopt(short = "o", long, required_unless("output-stats"))]
     output: Option<PathBuf>,
 
+    #[structopt(short, long)]
+    seed: Option<u64>,
+
     #[structopt(long)]
     output_stats: Option<PathBuf>,
 
@@ -49,19 +52,20 @@ struct Options {
 fn main() -> Result<(), Error> {
     let opt = Options::from_args();
 
-    let palette = match opt.palette {
-        PaletteOpt::Uniform => generate_uniform_palette(opt.width * opt.height),
-        PaletteOpt::Spherical => generate_spherical_palette(
-            opt.width * opt.height,
-            opt.central_color.unwrap(),
-            opt.color_radius.unwrap(),
-        ),
+    let mut builder = GrowthImageBuilder::new(opt.width, opt.height);
+    builder.epsilon(opt.epsilon);
+    match opt.palette {
+        PaletteOpt::Uniform => builder.palette(UniformPalette),
+        PaletteOpt::Spherical => builder.palette(SphericalPalette {
+            central_color: opt.central_color.unwrap(),
+            color_radius: opt.color_radius.unwrap(),
+        }),
     };
+    if let Some(seed) = opt.seed {
+        builder.seed(seed);
+    }
 
-    let mut image = GrowthImageBuilder::new(opt.width, opt.height)
-        .epsilon(opt.epsilon)
-        .palette(palette)
-        .build()?;
+    let mut image = builder.build()?;
 
     let bar = ProgressBar::new((opt.width * opt.height).into());
     bar.set_style(ProgressStyle::default_bar().template(

@@ -1,37 +1,53 @@
 use std::collections::HashMap;
 
-use crate::common::{PixelLoc, RectangularArray};
+use crate::topology::{PixelLoc, Topology};
 
 pub struct PointTracker {
     frontier: Vec<PixelLoc>,
     frontier_map: HashMap<PixelLoc, usize>,
     used: Vec<bool>,
-    size: RectangularArray,
+    topology: Topology,
 }
 
 impl PointTracker {
-    pub fn new(size: RectangularArray) -> Self {
+    pub fn new(topology: Topology) -> Self {
         Self {
-            size,
+            used: vec![false; topology.len()],
+            topology,
             frontier: Vec::new(),
             frontier_map: HashMap::new(),
-            used: vec![false; size.len()],
         }
     }
 
     pub fn add_to_frontier(&mut self, loc: PixelLoc) {
-        let index = self.size.get_index(loc);
+        PointTracker::_add_to_frontier(
+            &mut self.frontier,
+            &mut self.frontier_map,
+            &mut self.used,
+            &self.topology,
+            loc,
+        );
+    }
+
+    fn _add_to_frontier(
+        frontier: &mut Vec<PixelLoc>,
+        frontier_map: &mut HashMap<PixelLoc, usize>,
+        used: &mut Vec<bool>,
+        topology: &Topology,
+        loc: PixelLoc,
+    ) {
+        let index = topology.get_index(loc);
         if let Some(index) = index {
-            if !self.used[index] {
-                self.frontier_map.insert(loc, self.frontier.len());
-                self.frontier.push(loc);
-                self.used[index] = true;
+            if !used[index] {
+                frontier_map.insert(loc, frontier.len());
+                frontier.push(loc);
+                used[index] = true;
             }
         }
     }
 
     pub fn mark_as_used(&mut self, loc: PixelLoc) {
-        let index = self.size.get_index(loc);
+        let index = self.topology.get_index(loc);
         if let Some(index) = index {
             self.used[index] = true;
         }
@@ -50,9 +66,20 @@ impl PointTracker {
     }
 
     pub fn fill(&mut self, loc: PixelLoc) {
-        let size = self.size;
-        size.iter_adjacent(loc)
-            .for_each(|adjacent| self.add_to_frontier(adjacent));
+        let topology = &self.topology;
+        let mut frontier = &mut self.frontier;
+        let mut frontier_map = &mut self.frontier_map;
+        let mut used = &mut self.used;
+
+        topology.iter_adjacent(loc).for_each(|adjacent| {
+            PointTracker::_add_to_frontier(
+                &mut frontier,
+                &mut frontier_map,
+                &mut used,
+                &topology,
+                adjacent,
+            )
+        });
 
         self.remove_from_frontier(loc);
     }

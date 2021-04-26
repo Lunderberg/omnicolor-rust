@@ -1,13 +1,13 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use rand::distributions::Distribution;
 use rand::Rng;
 
 use crate::color::RGB;
-use crate::common::{PixelLoc, RectangularArray};
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
+use crate::topology::{PixelLoc, Topology};
 
 impl Point for RGB {
     type Dtype = u8;
@@ -27,7 +27,7 @@ impl Point for RGB {
 }
 
 pub struct GrowthImage {
-    pub(crate) size: RectangularArray,
+    pub(crate) topology: Topology,
     pub(crate) pixels: Vec<Option<RGB>>,
     pub(crate) stats: Vec<Option<PerformanceStats>>,
     pub(crate) num_filled_pixels: usize,
@@ -50,6 +50,7 @@ pub struct GrowthImageStage {
     pub(crate) selected_seed_points: Vec<PixelLoc>,
     pub(crate) num_random_seed_points: u32,
     pub(crate) forbidden_points: Vec<PixelLoc>,
+    pub(crate) portals: HashMap<PixelLoc, PixelLoc>,
 }
 
 impl GrowthImage {
@@ -64,9 +65,9 @@ impl GrowthImage {
 
     pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {
         let (count, rsum, gsum, bsum) = self
-            .size
+            .topology
             .iter_adjacent(loc)
-            .flat_map(|loc| self.size.get_index(loc))
+            .flat_map(|loc| self.topology.get_index(loc))
             .flat_map(|index| self.pixels[index])
             .fold(
                 (0u32, 0u32, 0u32, 0u32),
@@ -112,10 +113,17 @@ impl GrowthImage {
         self.current_stage_iter = 0;
         let active_stage = &self.stages[stage_index];
 
+        // Update the geometry with new portals.  Long-term, should
+        // forbidden points go here as well?  Conceptually, they fit
+        // really well with the geometry tracking class, but the
+        // implementation is much cleaner with them being part of the
+        // PointTracker's "used" array.
+        self.topology.portals = active_stage.portals.clone();
+
         // Remake the PointTracker, so that we can clear any forbidden
         // points from the previous stage, as well as removing any
         // newly forbidden points from the frontier.
-        let mut point_tracker = PointTracker::new(self.size);
+        let mut point_tracker = PointTracker::new(self.topology.clone());
 
         // All filled pixels are either forbidden, or forbidden with a
         // frontier.
@@ -124,7 +132,7 @@ impl GrowthImage {
             .iter()
             .enumerate()
             .filter(|(_i, p)| p.is_some())
-            .flat_map(|(i, _p)| self.size.get_loc(i));
+            .flat_map(|(i, _p)| self.topology.get_loc(i));
 
         if active_stage.grow_from_previous {
             filled_locs.for_each(|loc| point_tracker.fill(loc));
@@ -162,7 +170,7 @@ impl GrowthImage {
             self.pixels
                 .iter()
                 .enumerate()
-                .map(|(i, p)| (self.size.get_loc(i).unwrap(), p))
+                .map(|(i, p)| (self.topology.get_loc(i).unwrap(), p))
                 .filter(|(_loc, p)| p.is_none())
                 .map(|(loc, _p)| loc)
                 .enumerate()
@@ -196,7 +204,7 @@ impl GrowthImage {
             self.point_tracker.get_frontier_point(point_tracker_index);
         self.point_tracker.fill(next_loc);
 
-        let next_index = self.size.get_index(next_loc)?;
+        let next_index = self.topology.get_index(next_loc)?;
 
         let target_color =
             self.get_adjacent_color(next_loc).unwrap_or_else(|| RGB {
@@ -286,8 +294,11 @@ impl GrowthImage {
         let file = std::fs::File::create(filename).unwrap();
         let bufwriter = &mut std::io::BufWriter::new(file);
 
-        let mut encoder =
-            png::Encoder::new(bufwriter, self.size.width, self.size.height);
+        let mut encoder = png::Encoder::new(
+            bufwriter,
+            self.topology.size.width,
+            self.topology.size.height,
+        );
         encoder.set_color(png::ColorType::RGBA);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();

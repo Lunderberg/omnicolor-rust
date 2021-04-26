@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 
 #[allow(unused_imports)]
@@ -51,6 +53,42 @@ impl PixelLoc {
         let jmin = self.j.min(other_j);
         let jmax = self.j.max(other_j);
         (jmin..=jmax).map(|j| PixelLoc { i: self.i, j }).collect()
+    }
+}
+
+#[derive(Clone)]
+pub struct Topology {
+    pub size: RectangularArray,
+    pub portals: HashMap<PixelLoc, PixelLoc>,
+}
+
+// Currently, most of these just delegate to RectangularArray, but
+// they'll be more differentiated once there are multiple layers to
+// the image.
+impl Topology {
+    pub fn is_valid(&self, loc: PixelLoc) -> bool {
+        self.size.is_valid(loc)
+    }
+
+    pub fn get_index(&self, loc: PixelLoc) -> Option<usize> {
+        self.size.get_index(loc)
+    }
+
+    pub fn iter_adjacent(
+        &self,
+        loc: PixelLoc,
+    ) -> impl Iterator<Item = PixelLoc> + '_ {
+        let within_layer = self.size.iter_adjacent(loc);
+        let by_portal = self.portals.get(&loc).into_iter().map(|x| *x);
+        by_portal.chain(within_layer)
+    }
+
+    pub fn get_loc(&self, index: usize) -> Option<PixelLoc> {
+        self.size.get_loc(index)
+    }
+
+    pub fn len(&self) -> usize {
+        self.size.len()
     }
 }
 

@@ -1,14 +1,16 @@
+use std::collections::HashMap;
+
 use rand::{Rng, SeedableRng};
 
-use crate::common::{PixelLoc, RectangularArray};
 use crate::errors::Error;
 use crate::growth_image::{GrowthImage, GrowthImageStage};
 use crate::kd_tree::KDTree;
 use crate::palettes::{Palette, UniformPalette};
 use crate::point_tracker::PointTracker;
+use crate::topology::{PixelLoc, RectangularArray, Topology};
 
 pub struct GrowthImageBuilder {
-    size: RectangularArray,
+    topology: Topology,
     epsilon: f64,
     stages: Vec<GrowthImageStageBuilder>,
     seed: Option<u64>,
@@ -16,8 +18,13 @@ pub struct GrowthImageBuilder {
 
 impl GrowthImageBuilder {
     pub fn new(width: u32, height: u32) -> Self {
-        Self {
+        let topology = Topology {
             size: RectangularArray { width, height },
+            portals: HashMap::new(),
+        };
+
+        Self {
+            topology,
             epsilon: 1.0,
             stages: Vec::new(),
             seed: None,
@@ -58,23 +65,26 @@ impl GrowthImageBuilder {
             None => rand_chacha::ChaCha8Rng::from_entropy(),
         };
 
-        let pixels = vec![None; self.size.len()];
-        let stats = vec![None; self.size.len()];
+        let pixels = vec![None; self.topology.len()];
+        let stats = vec![None; self.topology.len()];
         let stages = self
             .stages
             .iter()
-            .map(|s| s.build(&self.size, &mut rng))
+            .map(|s| s.build(&self.topology, &mut rng))
             .collect();
 
+        // TODO: Avoid copying the topology every which way.  If I can
+        // wrangle the lifetimes, should be able to have the portal
+        // HashMap live in the stage and be borrowed from there.
         Ok(GrowthImage {
-            size: self.size,
+            topology: self.topology.clone(),
             pixels,
             stats,
             epsilon: self.epsilon,
             stages,
             active_stage: None,
             current_stage_iter: 0,
-            point_tracker: PointTracker::new(self.size),
+            point_tracker: PointTracker::new(self.topology.clone()),
             is_done: false,
             num_filled_pixels: 0,
             rng,
@@ -100,6 +110,7 @@ pub struct GrowthImageStageBuilder {
     is_first_stage: bool,
 
     forbidden_points: Vec<PixelLoc>,
+    connected_points: Vec<(PixelLoc, PixelLoc)>,
 }
 
 impl GrowthImageStageBuilder {
@@ -113,6 +124,7 @@ impl GrowthImageStageBuilder {
             grow_from_previous: None,
             is_first_stage: stage_i == 0,
             forbidden_points: Vec::new(),
+            connected_points: Vec::new(),
         }
     }
 
@@ -163,9 +175,17 @@ impl GrowthImageStageBuilder {
         self
     }
 
+    pub fn connected_points(
+        &mut self,
+        connected_points: Vec<(PixelLoc, PixelLoc)>,
+    ) -> &mut Self {
+        self.connected_points = connected_points;
+        self
+    }
+
     fn build(
         &self,
-        size: &RectangularArray,
+        topology: &Topology,
         rng: &mut impl Rng,
     ) -> GrowthImageStage {
         let num_random_seed_points = match self.num_random_seed_points {
@@ -188,7 +208,14 @@ impl GrowthImageStageBuilder {
             None => Vec::new(),
         };
 
-        let n_colors = self.n_colors.unwrap_or(size.len() as u32);
+        let portals = self
+            .connected_points
+            .iter()
+            .filter(|(a, b)| topology.is_valid(*a) && topology.is_valid(*b))
+            .flat_map(|&(a, b)| vec![(a, b), (b, a)].into_iter())
+            .collect();
+
+        let n_colors = self.n_colors.unwrap_or(topology.len() as u32);
         let palette = KDTree::new(self.palette.generate(n_colors, rng));
 
         GrowthImageStage {
@@ -198,6 +225,7 @@ impl GrowthImageStageBuilder {
             selected_seed_points,
             num_random_seed_points,
             forbidden_points: self.forbidden_points.clone(),
+            portals,
         }
     }
 }

@@ -57,6 +57,14 @@ struct Options {
         max_values = 4
     )]
     wall_location: Vec<i32>,
+
+    #[structopt(
+        long,
+        help = "(x1,y1,x2,y2), endpoints of a portal during first stage",
+        min_values = 4,
+        max_values = 4
+    )]
+    portal_location: Vec<i32>,
 }
 
 fn main() -> Result<(), Error> {
@@ -106,6 +114,14 @@ fn main() -> Result<(), Error> {
             PixelLoc { i: v[0], j: v[1] }
                 .line_to(PixelLoc { i: v[2], j: v[3] }),
         );
+    }
+
+    if opt.portal_location.len() == 4 {
+        let v = &opt.portal_location;
+        stage_builder.connected_points(vec![(
+            PixelLoc { i: v[0], j: v[1] },
+            PixelLoc { i: v[2], j: v[3] },
+        )]);
     }
 
     let stage_builder = builder

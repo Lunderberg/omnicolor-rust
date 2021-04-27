@@ -94,8 +94,8 @@ fn main() -> Result<(), Error> {
         color_radius: opt.color_radius,
     };
 
-    let mut builder = GrowthImageBuilder::new(opt.width, opt.height);
-    builder.epsilon(5.0);
+    let mut builder = GrowthImageBuilder::new();
+    builder.add_layer(opt.width, opt.height).epsilon(5.0);
 
     let stage_builder = builder
         .new_stage()
@@ -105,22 +105,42 @@ fn main() -> Result<(), Error> {
 
     if opt.initial_point.len() == 2 {
         let v = &opt.initial_point;
-        stage_builder.seed_points(vec![PixelLoc { i: v[0], j: v[1] }]);
+        stage_builder.seed_points(vec![PixelLoc {
+            layer: 0,
+            i: v[0],
+            j: v[1],
+        }]);
     }
 
     if opt.wall_location.len() == 4 {
         let v = &opt.wall_location;
         stage_builder.forbidden_points(
-            PixelLoc { i: v[0], j: v[1] }
-                .line_to(PixelLoc { i: v[2], j: v[3] }),
+            PixelLoc {
+                layer: 0,
+                i: v[0],
+                j: v[1],
+            }
+            .line_to(PixelLoc {
+                layer: 0,
+                i: v[2],
+                j: v[3],
+            }),
         );
     }
 
     if opt.portal_location.len() == 4 {
         let v = &opt.portal_location;
         stage_builder.connected_points(vec![(
-            PixelLoc { i: v[0], j: v[1] },
-            PixelLoc { i: v[2], j: v[3] },
+            PixelLoc {
+                layer: 0,
+                i: v[0],
+                j: v[1],
+            },
+            PixelLoc {
+                layer: 0,
+                i: v[2],
+                j: v[3],
+            },
         )]);
     }
 

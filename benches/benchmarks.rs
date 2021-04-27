@@ -12,8 +12,11 @@ use omnicolor_rust::palettes::UniformPalette;
 use omnicolor_rust::GrowthImageBuilder;
 
 fn generate_flat_image(b: &mut Bencher) {
-    let mut builder = GrowthImageBuilder::new(1920, 1080);
-    builder.epsilon(5.0).palette(UniformPalette);
+    let mut builder = GrowthImageBuilder::new();
+    builder
+        .add_layer(1920, 1080)
+        .epsilon(5.0)
+        .palette(UniformPalette);
 
     b.iter(|| {
         let mut image = builder.build().unwrap();

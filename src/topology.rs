@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 
 use itertools::Itertools;
 
@@ -7,13 +8,14 @@ use crate::errors::Error;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct PixelLoc {
+    pub layer: u8,
     pub i: i32,
     pub j: i32,
 }
 
 impl PixelLoc {
     // Line between two points.  Uses Bresenham's, modified to have no
-    // diagonal openings.
+    // diagonal openings.  Assumes the two points are on the same layer.
     pub fn line_to(&self, other: PixelLoc) -> Vec<PixelLoc> {
         if self.i == other.i {
             self.vertical_line_to(other.j)
@@ -40,7 +42,11 @@ impl PixelLoc {
             let jmax = j1.max(j2);
 
             for j in jmin..=jmax {
-                output.push(PixelLoc { i, j });
+                output.push(PixelLoc {
+                    layer: self.layer,
+                    i,
+                    j,
+                });
             }
 
             prev_j = Some(j1);
@@ -52,13 +58,19 @@ impl PixelLoc {
     fn vertical_line_to(&self, other_j: i32) -> Vec<PixelLoc> {
         let jmin = self.j.min(other_j);
         let jmax = self.j.max(other_j);
-        (jmin..=jmax).map(|j| PixelLoc { i: self.i, j }).collect()
+        (jmin..=jmax)
+            .map(|j| PixelLoc {
+                layer: self.layer,
+                i: self.i,
+                j,
+            })
+            .collect()
     }
 }
 
 #[derive(Clone)]
 pub struct Topology {
-    pub size: RectangularArray,
+    pub layers: Vec<RectangularArray>,
     pub portals: HashMap<PixelLoc, PixelLoc>,
 }
 
@@ -67,28 +79,78 @@ pub struct Topology {
 // the image.
 impl Topology {
     pub fn is_valid(&self, loc: PixelLoc) -> bool {
-        self.size.is_valid(loc)
+        self.layers
+            .get(loc.layer as usize)
+            .map(|layer| layer.is_valid(loc))
+            .unwrap_or(false)
     }
 
+    // Return the index associated with a pixel location, or None if
+    // the location is invalid (e.g. no such layer, or out of bounds
+    // for that layer).
     pub fn get_index(&self, loc: PixelLoc) -> Option<usize> {
-        self.size.get_index(loc)
+        // Allow for a flat array of pixels to store all layers
+        self.layers
+            .get(loc.layer as usize)
+            .map(|layer| {
+                layer.get_index(loc).map(|in_layer_index| {
+                    let offset = self.layers[0..(loc.layer as usize)]
+                        .iter()
+                        .map(|prev_layer| prev_layer.len())
+                        .sum::<usize>();
+                    in_layer_index + offset
+                })
+            })
+            .flatten()
     }
 
     pub fn iter_adjacent(
         &self,
         loc: PixelLoc,
     ) -> impl Iterator<Item = PixelLoc> + '_ {
-        let within_layer = self.size.iter_adjacent(loc);
+        let within_layer = self
+            .layers
+            .get(loc.layer as usize)
+            .map(|layer| layer.iter_adjacent(loc))
+            .into_iter()
+            .flatten();
         let by_portal = self.portals.get(&loc).into_iter().map(|x| *x);
         by_portal.chain(within_layer)
     }
 
+    pub fn get_layer_bounds(&self, layer: u8) -> Option<Range<usize>> {
+        let layer = layer as usize;
+        if layer < self.layers.len() {
+            let offset = self.layers[0..layer]
+                .iter()
+                .map(|prev_layer| prev_layer.len())
+                .sum::<usize>();
+            let len = self.layers[layer].len();
+            Some(offset..(offset + len))
+        } else {
+            None
+        }
+    }
+
     pub fn get_loc(&self, index: usize) -> Option<PixelLoc> {
-        self.size.get_loc(index)
+        self.layers
+            .iter()
+            .enumerate()
+            .scan(0, |cumsum, (layer_i, layer)| {
+                let min_index = *cumsum;
+                *cumsum = min_index + layer.len();
+                Some((min_index, layer, layer_i))
+            })
+            .filter(|&(min_index, _layer, _layer_i)| index >= min_index)
+            .next()
+            .map(|(min_index, layer, layer_i)| {
+                layer.get_loc(layer_i as u8, index - min_index)
+            })
+            .flatten()
     }
 
     pub fn len(&self) -> usize {
-        self.size.len()
+        self.layers.iter().map(|layer| layer.len()).sum()
     }
 }
 
@@ -122,15 +184,17 @@ impl RectangularArray {
             .cartesian_product(-1..=1)
             .filter(|&(di, dj)| (di != 0) || (dj != 0))
             .map(move |(di, dj)| PixelLoc {
+                layer: loc.layer,
                 i: loc.i + di,
                 j: loc.j + dj,
             })
             .filter(move |&loc| self.is_valid(loc))
     }
 
-    pub fn get_loc(&self, index: usize) -> Option<PixelLoc> {
+    pub fn get_loc(&self, layer: u8, index: usize) -> Option<PixelLoc> {
         if index < self.len() {
             Some(PixelLoc {
+                layer,
                 i: (index % (self.width as usize)) as i32,
                 j: (index / (self.width as usize)) as i32,
             })
@@ -154,17 +218,22 @@ mod test {
             width: 5,
             height: 10,
         };
-        assert!(size.is_valid(PixelLoc { i: 2, j: 3 }));
-        assert!(size.is_valid(PixelLoc { i: 4, j: 9 }));
-        assert!(size.is_valid(PixelLoc { i: 0, j: 0 }));
+        let layer = 0u8;
+        assert!(size.is_valid(PixelLoc { layer, i: 2, j: 3 }));
+        assert!(size.is_valid(PixelLoc { layer, i: 4, j: 9 }));
+        assert!(size.is_valid(PixelLoc { layer, i: 0, j: 0 }));
 
-        assert!(!size.is_valid(PixelLoc { i: 5, j: 3 }));
-        assert!(!size.is_valid(PixelLoc { i: 2, j: 10 }));
-        assert!(!size.is_valid(PixelLoc { i: 2, j: 15 }));
-        assert!(!size.is_valid(PixelLoc { i: -1, j: 3 }));
-        assert!(!size.is_valid(PixelLoc { i: 5, j: -1 }));
-        assert!(!size.is_valid(PixelLoc { i: 2, j: -1 }));
-        assert!(!size.is_valid(PixelLoc { i: -1, j: -1 }));
+        assert!(!size.is_valid(PixelLoc { layer, i: 5, j: 3 }));
+        assert!(!size.is_valid(PixelLoc { layer, i: 2, j: 10 }));
+        assert!(!size.is_valid(PixelLoc { layer, i: 2, j: 15 }));
+        assert!(!size.is_valid(PixelLoc { layer, i: -1, j: 3 }));
+        assert!(!size.is_valid(PixelLoc { layer, i: 5, j: -1 }));
+        assert!(!size.is_valid(PixelLoc { layer, i: 2, j: -1 }));
+        assert!(!size.is_valid(PixelLoc {
+            layer,
+            i: -1,
+            j: -1
+        }));
 
         Ok(())
     }
@@ -176,104 +245,144 @@ mod test {
             height: 10,
         };
 
-        assert_eq!(size.get_index(PixelLoc { i: 0, j: 0 }), Some(0));
-        assert_eq!(size.get_index(PixelLoc { i: 1, j: 0 }), Some(1));
-        assert_eq!(size.get_index(PixelLoc { i: 0, j: 1 }), Some(5));
-        assert_eq!(size.get_index(PixelLoc { i: 1, j: 1 }), Some(6));
-        assert_eq!(size.get_index(PixelLoc { i: 4, j: 9 }), Some(49));
+        let layer = 0u8;
 
-        assert_eq!(size.get_index(PixelLoc { i: -1, j: 1 }), None);
-        assert_eq!(size.get_index(PixelLoc { i: 4, j: 10 }), None);
+        assert_eq!(size.get_index(PixelLoc { layer, i: 0, j: 0 }), Some(0));
+        assert_eq!(size.get_index(PixelLoc { layer, i: 1, j: 0 }), Some(1));
+        assert_eq!(size.get_index(PixelLoc { layer, i: 0, j: 1 }), Some(5));
+        assert_eq!(size.get_index(PixelLoc { layer, i: 1, j: 1 }), Some(6));
+        assert_eq!(size.get_index(PixelLoc { layer, i: 4, j: 9 }), Some(49));
 
-        assert_eq!(size.get_loc(0), Some(PixelLoc { i: 0, j: 0 }));
-        assert_eq!(size.get_loc(11), Some(PixelLoc { i: 1, j: 2 }));
-        assert_eq!(size.get_loc(1), Some(PixelLoc { i: 1, j: 0 }));
+        assert_eq!(size.get_index(PixelLoc { layer, i: -1, j: 1 }), None);
+        assert_eq!(size.get_index(PixelLoc { layer, i: 4, j: 10 }), None);
 
-        assert_eq!(size.get_loc(50), None);
-        assert_eq!(size.get_loc(500000), None);
+        assert_eq!(
+            size.get_loc(layer, 0),
+            Some(PixelLoc { layer, i: 0, j: 0 })
+        );
+        assert_eq!(
+            size.get_loc(layer, 11),
+            Some(PixelLoc { layer, i: 1, j: 2 })
+        );
+        assert_eq!(
+            size.get_loc(layer, 1),
+            Some(PixelLoc { layer, i: 1, j: 0 })
+        );
+        assert_eq!(size.get_loc(layer, 50), None);
+        assert_eq!(size.get_loc(layer, 500000), None);
 
         Ok(())
     }
 
     #[test]
     fn test_line_to() -> Result<(), Error> {
+        let layer = 0u8;
+
         assert_eq!(
-            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 0, j: 0 }),
-            vec![PixelLoc { i: 0, j: 0 }]
+            PixelLoc { layer, i: 0, j: 0 }.line_to(PixelLoc {
+                layer,
+                i: 0,
+                j: 0
+            }),
+            vec![PixelLoc { layer, i: 0, j: 0 }]
         );
 
         // Vertical line up
         assert_eq!(
-            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 0, j: 3 }),
+            PixelLoc { layer, i: 0, j: 0 }.line_to(PixelLoc {
+                layer,
+                i: 0,
+                j: 3
+            }),
             vec![
-                PixelLoc { i: 0, j: 0 },
-                PixelLoc { i: 0, j: 1 },
-                PixelLoc { i: 0, j: 2 },
-                PixelLoc { i: 0, j: 3 },
+                PixelLoc { layer, i: 0, j: 0 },
+                PixelLoc { layer, i: 0, j: 1 },
+                PixelLoc { layer, i: 0, j: 2 },
+                PixelLoc { layer, i: 0, j: 3 },
             ]
         );
 
         // Horizontal line right
         assert_eq!(
-            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 3, j: 0 }),
+            PixelLoc { layer, i: 0, j: 0 }.line_to(PixelLoc {
+                layer,
+                i: 3,
+                j: 0
+            }),
             vec![
-                PixelLoc { i: 0, j: 0 },
-                PixelLoc { i: 1, j: 0 },
-                PixelLoc { i: 2, j: 0 },
-                PixelLoc { i: 3, j: 0 },
+                PixelLoc { layer, i: 0, j: 0 },
+                PixelLoc { layer, i: 1, j: 0 },
+                PixelLoc { layer, i: 2, j: 0 },
+                PixelLoc { layer, i: 3, j: 0 },
             ]
         );
 
         // Diagonal line 1:1
         assert_eq!(
-            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 3, j: 3 }),
+            PixelLoc { layer, i: 0, j: 0 }.line_to(PixelLoc {
+                layer,
+                i: 3,
+                j: 3
+            }),
             vec![
-                PixelLoc { i: 0, j: 0 },
-                PixelLoc { i: 1, j: 0 },
-                PixelLoc { i: 1, j: 1 },
-                PixelLoc { i: 2, j: 1 },
-                PixelLoc { i: 2, j: 2 },
-                PixelLoc { i: 3, j: 2 },
-                PixelLoc { i: 3, j: 3 },
+                PixelLoc { layer, i: 0, j: 0 },
+                PixelLoc { layer, i: 1, j: 0 },
+                PixelLoc { layer, i: 1, j: 1 },
+                PixelLoc { layer, i: 2, j: 1 },
+                PixelLoc { layer, i: 2, j: 2 },
+                PixelLoc { layer, i: 3, j: 2 },
+                PixelLoc { layer, i: 3, j: 3 },
             ]
         );
 
         // Slope < 1
         assert_eq!(
-            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 3, j: 2 }),
+            PixelLoc { layer, i: 0, j: 0 }.line_to(PixelLoc {
+                layer,
+                i: 3,
+                j: 2
+            }),
             vec![
-                PixelLoc { i: 0, j: 0 },
-                PixelLoc { i: 1, j: 0 },
-                PixelLoc { i: 2, j: 0 },
-                PixelLoc { i: 2, j: 1 },
-                PixelLoc { i: 3, j: 1 },
-                PixelLoc { i: 3, j: 2 },
+                PixelLoc { layer, i: 0, j: 0 },
+                PixelLoc { layer, i: 1, j: 0 },
+                PixelLoc { layer, i: 2, j: 0 },
+                PixelLoc { layer, i: 2, j: 1 },
+                PixelLoc { layer, i: 3, j: 1 },
+                PixelLoc { layer, i: 3, j: 2 },
             ]
         );
 
         // Slope > 1
         assert_eq!(
-            PixelLoc { i: 0, j: 0 }.line_to(PixelLoc { i: 2, j: 3 }),
+            PixelLoc { layer, i: 0, j: 0 }.line_to(PixelLoc {
+                layer,
+                i: 2,
+                j: 3
+            }),
             vec![
-                PixelLoc { i: 0, j: 0 },
-                PixelLoc { i: 1, j: 0 },
-                PixelLoc { i: 1, j: 1 },
-                PixelLoc { i: 2, j: 1 },
-                PixelLoc { i: 2, j: 2 },
-                PixelLoc { i: 2, j: 3 },
+                PixelLoc { layer, i: 0, j: 0 },
+                PixelLoc { layer, i: 1, j: 0 },
+                PixelLoc { layer, i: 1, j: 1 },
+                PixelLoc { layer, i: 2, j: 1 },
+                PixelLoc { layer, i: 2, j: 2 },
+                PixelLoc { layer, i: 2, j: 3 },
             ]
         );
 
         // Off-origin
         assert_eq!(
-            PixelLoc { i: 1, j: -1 }.line_to(PixelLoc { i: 3, j: 2 }),
+            PixelLoc { layer, i: 1, j: -1 }.line_to(PixelLoc {
+                layer,
+                i: 3,
+                j: 2
+            }),
             vec![
-                PixelLoc { i: 1, j: -1 },
-                PixelLoc { i: 2, j: -1 },
-                PixelLoc { i: 2, j: 0 },
-                PixelLoc { i: 3, j: 0 },
-                PixelLoc { i: 3, j: 1 },
-                PixelLoc { i: 3, j: 2 },
+                PixelLoc { layer, i: 1, j: -1 },
+                PixelLoc { layer, i: 2, j: -1 },
+                PixelLoc { layer, i: 2, j: 0 },
+                PixelLoc { layer, i: 3, j: 0 },
+                PixelLoc { layer, i: 3, j: 1 },
+                PixelLoc { layer, i: 3, j: 2 },
             ]
         );
 

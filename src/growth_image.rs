@@ -231,8 +231,12 @@ impl GrowthImage {
     }
 
     pub fn write(&self, filename: &PathBuf) {
-        let data = self
-            .pixels
+        self.write_layer(&filename, 0);
+    }
+
+    pub fn write_layer(&self, filename: &PathBuf, layer: u8) {
+        let index_range = self.topology.get_layer_bounds(layer).unwrap();
+        let data = self.pixels[index_range]
             .iter()
             .map(|p| match p {
                 Some(rgb) => vec![rgb.r(), rgb.g(), rgb.b(), 255],
@@ -241,33 +245,30 @@ impl GrowthImage {
             .flat_map(|p| p.into_iter())
             .collect::<Vec<u8>>();
 
-        self.write_image(filename, &data);
+        self.write_image(filename, &data, layer);
     }
 
     pub fn write_stats(&self, filename: &PathBuf) {
-        let max = self.stats.iter().filter_map(|s| *s).fold(
-            PerformanceStats::default(),
-            |a, b| PerformanceStats {
+        self.write_stats_layer(filename, 0);
+    }
+
+    pub fn write_stats_layer(&self, filename: &PathBuf, layer: u8) {
+        let index_range = self.topology.get_layer_bounds(layer).unwrap();
+
+        let max = self.stats[index_range.clone()]
+            .iter()
+            .filter_map(|s| *s)
+            .fold(PerformanceStats::default(), |a, b| PerformanceStats {
                 nodes_checked: a.nodes_checked.max(b.nodes_checked),
                 leaf_nodes_checked: a
                     .leaf_nodes_checked
                     .max(b.leaf_nodes_checked),
                 points_checked: a.points_checked.max(b.points_checked),
-            },
-        );
+            });
 
-        let data = self
-            .stats
+        let data = self.stats[index_range]
             .iter()
             .map(|s| match s {
-                // Linear scaling from 0 to max.
-                // Some(stats) => vec![
-                //     (255 * stats.nodes_checked / max.nodes_checked) as u8,
-                //     (255 * stats.leaf_nodes_checked / max.leaf_nodes_checked)
-                //         as u8,
-                //     (255 * stats.points_checked / max.points_checked) as u8,
-                //     255,
-                // ],
                 Some(stats) => vec![
                     (255.0
                         * ((stats.nodes_checked as f32).ln()
@@ -287,18 +288,15 @@ impl GrowthImage {
             })
             .flat_map(|p| p.into_iter())
             .collect::<Vec<u8>>();
-        self.write_image(filename, &data)
+        self.write_image(filename, &data, layer)
     }
 
-    fn write_image(&self, filename: &PathBuf, data: &[u8]) {
+    fn write_image(&self, filename: &PathBuf, data: &[u8], layer: u8) {
         let file = std::fs::File::create(filename).unwrap();
         let bufwriter = &mut std::io::BufWriter::new(file);
+        let size = self.topology.layers[layer as usize];
 
-        let mut encoder = png::Encoder::new(
-            bufwriter,
-            self.topology.size.width,
-            self.topology.size.height,
-        );
+        let mut encoder = png::Encoder::new(bufwriter, size.width, size.height);
         encoder.set_color(png::ColorType::RGBA);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();

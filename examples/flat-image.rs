@@ -52,8 +52,10 @@ struct Options {
 fn main() -> Result<(), Error> {
     let opt = Options::from_args();
 
-    let mut builder = GrowthImageBuilder::new(opt.width, opt.height);
-    builder.epsilon(opt.epsilon);
+    let mut builder = GrowthImageBuilder::new();
+    builder
+        .add_layer(opt.width, opt.height)
+        .epsilon(opt.epsilon);
     match opt.palette {
         PaletteOpt::Uniform => builder.palette(UniformPalette),
         PaletteOpt::Spherical => builder.palette(SphericalPalette {

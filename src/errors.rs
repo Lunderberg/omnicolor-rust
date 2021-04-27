@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug)]
 pub enum Error {
     NoStagesDefined,
+    NoLayersDefined,
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError),
     VecLengthError(usize),

@@ -17,9 +17,9 @@ pub struct GrowthImageBuilder {
 }
 
 impl GrowthImageBuilder {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub fn new() -> Self {
         let topology = Topology {
-            size: RectangularArray { width, height },
+            layers: Vec::new(),
             portals: HashMap::new(),
         };
 
@@ -29,6 +29,13 @@ impl GrowthImageBuilder {
             stages: Vec::new(),
             seed: None,
         }
+    }
+
+    pub fn add_layer(&mut self, width: u32, height: u32) -> &mut Self {
+        self.topology
+            .layers
+            .push(RectangularArray { width, height });
+        self
     }
 
     pub fn new_stage(&mut self) -> &mut GrowthImageStageBuilder {
@@ -58,6 +65,9 @@ impl GrowthImageBuilder {
     pub fn build(&self) -> Result<GrowthImage, Error> {
         if self.stages.len() == 0 {
             return Err(Error::NoStagesDefined);
+        }
+        if self.topology.len() == 0 {
+            return Err(Error::NoLayersDefined);
         }
 
         let mut rng = match self.seed {

@@ -1,7 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use rand::distributions::Distribution;
 use rand::Rng;
 
 use crate::color::RGB;
@@ -155,28 +154,10 @@ impl GrowthImage {
         // Randomly pick N seed points from those remaining.
         // Implementation assumes that N is relatively small, may be
         // inefficient for large N.
-        let num_unfilled_pixels = self.pixels.len() - self.num_filled_pixels;
-        let num_random = usize::min(
+        point_tracker.add_random_to_frontier(
             active_stage.num_random_seed_points as usize,
-            num_unfilled_pixels,
+            &mut self.rng,
         );
-        if num_random > 0 {
-            let mut indices = HashSet::new();
-            let distribution =
-                rand::distributions::Uniform::from(0..num_unfilled_pixels);
-            while indices.len() < num_random {
-                indices.insert(distribution.sample(&mut self.rng));
-            }
-            self.pixels
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (self.topology.get_loc(i).unwrap(), p))
-                .filter(|(_loc, p)| p.is_none())
-                .map(|(loc, _p)| loc)
-                .enumerate()
-                .filter(|(i, _loc)| indices.contains(i))
-                .for_each(|(_i, loc)| point_tracker.add_to_frontier(loc));
-        }
 
         // Set the new point tracker as the one to use
         self.point_tracker = point_tracker;

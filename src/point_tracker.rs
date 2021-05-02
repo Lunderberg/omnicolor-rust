@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use rand::distributions::Distribution;
+use rand::Rng;
 
 use crate::topology::{PixelLoc, Topology};
 
@@ -20,29 +23,70 @@ impl PointTracker {
     }
 
     pub fn add_to_frontier(&mut self, loc: PixelLoc) {
-        PointTracker::_add_to_frontier(
-            &mut self.frontier,
-            &mut self.frontier_map,
-            &mut self.used,
-            &self.topology,
-            loc,
-        );
+        let index = self.topology.get_index(loc);
+        if let Some(index) = index {
+            PointTracker::_add_to_frontier(
+                &mut self.frontier,
+                &mut self.frontier_map,
+                &mut self.used,
+                index,
+                loc,
+            );
+        }
+    }
+
+    pub fn add_random_to_frontier(
+        &mut self,
+        num_random: usize,
+        rng: &mut impl Rng,
+    ) {
+        let num_unused = self.used.iter().filter(|&x| !x).count();
+
+        let num_random = usize::min(num_unused, num_random);
+
+        if num_random == 0 {
+            return;
+        }
+
+        let mut indices = HashSet::new();
+        let distribution = rand::distributions::Uniform::from(0..num_unused);
+        while indices.len() < num_random {
+            indices.insert(distribution.sample(rng));
+        }
+        self.used
+            .iter()
+            .enumerate()
+            .filter(|(_i, &b)| !b)
+            .map(|(i, _b)| i)
+            .enumerate()
+            .filter(|(i_unused, _i_arr)| indices.contains(i_unused))
+            .map(|(_i_unused, i_arr)| {
+                (i_arr, self.topology.get_loc(i_arr).unwrap())
+            })
+            .collect::<Vec<_>>()
+            .iter()
+            .for_each(|&(i_arr, loc)| {
+                PointTracker::_add_to_frontier(
+                    &mut self.frontier,
+                    &mut self.frontier_map,
+                    &mut self.used,
+                    i_arr,
+                    loc,
+                )
+            });
     }
 
     fn _add_to_frontier(
         frontier: &mut Vec<PixelLoc>,
         frontier_map: &mut HashMap<PixelLoc, usize>,
         used: &mut Vec<bool>,
-        topology: &Topology,
+        index: usize,
         loc: PixelLoc,
     ) {
-        let index = topology.get_index(loc);
-        if let Some(index) = index {
-            if !used[index] {
-                frontier_map.insert(loc, frontier.len());
-                frontier.push(loc);
-                used[index] = true;
-            }
+        if !used[index] {
+            frontier_map.insert(loc, frontier.len());
+            frontier.push(loc);
+            used[index] = true;
         }
     }
 
@@ -72,13 +116,16 @@ impl PointTracker {
         let mut used = &mut self.used;
 
         topology.iter_adjacent(loc).for_each(|adjacent| {
-            PointTracker::_add_to_frontier(
-                &mut frontier,
-                &mut frontier_map,
-                &mut used,
-                &topology,
-                adjacent,
-            )
+            let index = topology.get_index(adjacent);
+            if let Some(index) = index {
+                PointTracker::_add_to_frontier(
+                    &mut frontier,
+                    &mut frontier_map,
+                    &mut used,
+                    index,
+                    adjacent,
+                );
+            }
         });
 
         self.remove_from_frontier(loc);

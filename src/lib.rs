@@ -15,6 +15,7 @@ mod topology;
 
 pub use color::RGB;
 pub use errors::Error;
+pub use growth_image::SaveImageType;
 pub use growth_image_builder::GrowthImageBuilder;
 pub use palettes::*;
 pub use topology::PixelLoc;

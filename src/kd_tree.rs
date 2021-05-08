@@ -86,6 +86,10 @@ where
         self.nodes[0].num_points as usize
     }
 
+    pub fn iter_points(&self) -> impl Iterator<Item = &Option<T>> {
+        self.points.iter()
+    }
+
     fn generate_nodes(
         nodes: &mut Vec<Node<T>>,
         points: &mut [T],

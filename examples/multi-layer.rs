@@ -147,7 +147,7 @@ fn main() -> Result<(), Error> {
 
     let mut image = builder.build()?;
     image.fill_until_done();
-    image.write(&opt.output);
+    image.write(opt.output);
 
     Ok(())
 }

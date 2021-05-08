@@ -4,7 +4,7 @@ use clap::arg_enum;
 use structopt::StructOpt;
 
 use omnicolor_rust::palettes::*;
-use omnicolor_rust::{Error, GrowthImageBuilder, RGB};
+use omnicolor_rust::{Error, GrowthImageBuilder, SaveImageType, RGB};
 
 arg_enum! {
     #[derive(Debug, PartialEq)]
@@ -71,10 +71,10 @@ fn main() -> Result<(), Error> {
     image.fill_until_done();
 
     if let Some(output) = opt.output {
-        image.write(&output);
+        image.write(output);
     }
     if let Some(output) = opt.output_stats {
-        image.write_stats(&output);
+        image.write_image(output, SaveImageType::Statistics, 0);
     }
 
     Ok(())

@@ -7,7 +7,7 @@ use rand::Rng;
 use crate::color::RGB;
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
-use crate::topology::{PixelLoc, Topology};
+use crate::topology::{PixelLoc, RectangularArray, Topology};
 
 impl Point for RGB {
     type Dtype = u8;
@@ -42,6 +42,19 @@ pub struct GrowthImage {
 
     pub(crate) is_done: bool,
     pub(crate) progress_bar: Option<ProgressBar>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum SaveImageType {
+    Generated,
+    Statistics,
+    ColorPalette,
+}
+
+struct SaveImageData {
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
 }
 
 pub struct GrowthImageStage {
@@ -226,12 +239,27 @@ impl GrowthImage {
         Some((next_loc, next_color))
     }
 
-    pub fn write(&self, filename: &PathBuf) {
-        self.write_layer(&filename, 0);
+    pub fn write(&self, filename: PathBuf) {
+        self.write_image(filename, SaveImageType::Generated, 0);
     }
 
-    pub fn write_layer(&self, filename: &PathBuf, layer: u8) {
+    pub fn write_image(
+        &self,
+        filename: PathBuf,
+        image_type: SaveImageType,
+        layer: u8,
+    ) {
+        let data = match image_type {
+            SaveImageType::Generated => self._image_data(layer),
+            SaveImageType::Statistics => self._statistics_image_data(layer),
+            SaveImageType::ColorPalette => self._color_palette_image_data(),
+        };
+        self._write_image_data(filename, &data);
+    }
+
+    fn _image_data(&self, layer: u8) -> SaveImageData {
         let index_range = self.topology.get_layer_bounds(layer).unwrap();
+        let size = self.topology.layers[layer as usize];
         let data = self.pixels[index_range]
             .iter()
             .map(|p| match p {
@@ -239,18 +267,17 @@ impl GrowthImage {
                 None => vec![0, 0, 0, 0],
             })
             .flat_map(|p| p.into_iter())
-            .collect::<Vec<u8>>();
-
-        self.write_image(filename, &data, layer);
+            .collect();
+        SaveImageData {
+            data,
+            width: size.width,
+            height: size.height,
+        }
     }
 
-    pub fn write_stats(&self, filename: &PathBuf) {
-        self.write_stats_layer(filename, 0);
-    }
-
-    pub fn write_stats_layer(&self, filename: &PathBuf, layer: u8) {
+    fn _statistics_image_data(&self, layer: u8) -> SaveImageData {
         let index_range = self.topology.get_layer_bounds(layer).unwrap();
-
+        let size = self.topology.layers[layer as usize];
         let max = self.stats[index_range.clone()]
             .iter()
             .filter_map(|s| *s)
@@ -283,20 +310,52 @@ impl GrowthImage {
                 None => vec![0, 0, 0, 0],
             })
             .flat_map(|p| p.into_iter())
-            .collect::<Vec<u8>>();
-        self.write_image(filename, &data, layer)
+            .collect();
+
+        SaveImageData {
+            data,
+            width: size.width,
+            height: size.height,
+        }
     }
 
-    fn write_image(&self, filename: &PathBuf, data: &[u8], layer: u8) {
+    fn _color_palette_image_data(&self) -> SaveImageData {
+        let data = self.stages[self.active_stage.unwrap_or(0)]
+            .palette
+            .iter_points()
+            .map(|p| match p {
+                Some(rgb) => vec![rgb.r(), rgb.g(), rgb.b(), 255],
+                None => vec![0, 0, 0, 0],
+            })
+            .flat_map(|p| p.into_iter())
+            .collect::<Vec<u8>>();
+
+        // TODO: Better method here.  Currently, the smallest size
+        // with enough points that roughly matches the aspect
+        // ratio of layer 0.
+        let aspect_ratio = (self.topology.layers[0].width as f64)
+            / (self.topology.layers[0].height as f64);
+
+        let area = self.topology.len() as f64;
+        let height = (area / aspect_ratio).sqrt();
+        let width = (height * aspect_ratio).ceil() as u32;
+        let height = height.ceil() as u32;
+        SaveImageData {
+            data,
+            width,
+            height,
+        }
+    }
+
+    fn _write_image_data(&self, filename: PathBuf, data: &SaveImageData) {
         let file = std::fs::File::create(filename).unwrap();
         let bufwriter = &mut std::io::BufWriter::new(file);
-        let size = self.topology.layers[layer as usize];
 
-        let mut encoder = png::Encoder::new(bufwriter, size.width, size.height);
+        let mut encoder = png::Encoder::new(bufwriter, data.width, data.height);
         encoder.set_color(png::ColorType::RGBA);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
 
-        writer.write_image_data(&data).unwrap();
+        writer.write_image_data(&data.data).unwrap();
     }
 }

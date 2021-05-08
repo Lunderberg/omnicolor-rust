@@ -31,7 +31,7 @@ struct Options {
     #[structopt(long, default_value = "222222")]
     outline_color: RGB,
 
-    #[structopt(long, default_value = "1000000")]
+    #[structopt(long, default_value = "500000")]
     num_points_outline: usize,
 
     #[structopt(long, default_value = "80ff66")]
@@ -112,6 +112,16 @@ fn distance_map_points(
         .collect()
 }
 
+#[allow(dead_code)]
+struct PixelLocInfo {
+    loc: PixelLoc,
+    path_distance: f64,
+    over_distance: f64,
+    under_distance: f64,
+    intersection_distance: f64,
+    anti_intersection_distance: f64,
+}
+
 fn parse_celtic_knot(opt: &Options) -> CelticKnotDetails {
     // Read the path of the knot from file
     let svg_text =
@@ -172,6 +182,7 @@ fn parse_celtic_knot(opt: &Options) -> CelticKnotDetails {
 
     // Find the distances from each pixel to critical parts of the
     // path.
+
     let path_distance = distance_map_path(opt.width, opt.height, &knotpath);
     let over_distance = distance_map_path(opt.width, opt.height, &over_path);
     let under_distance = distance_map_path(opt.width, opt.height, &under_path);
@@ -179,86 +190,86 @@ fn parse_celtic_knot(opt: &Options) -> CelticKnotDetails {
         distance_map_points(opt.width, opt.height, &intersections);
     let anti_intersection_distance =
         distance_map_points(opt.width, opt.height, &anti_intersections);
+    let loc_info = {
+        path_distance
+            .iter()
+            .map(|(&loc, &path_distance)| {
+                let over_distance = *over_distance.get(&loc).unwrap();
+                let under_distance = *under_distance.get(&loc).unwrap();
+                let intersection_distance =
+                    *intersection_distance.get(&loc).unwrap();
+                let anti_intersection_distance =
+                    *anti_intersection_distance.get(&loc).unwrap();
+                PixelLocInfo {
+                    loc,
+                    path_distance,
+                    over_distance,
+                    under_distance,
+                    intersection_distance,
+                    anti_intersection_distance,
+                }
+            })
+            .collect::<Vec<_>>()
+    };
 
     // List all points outside the knot
-    let exterior_points_mainlayer = over_distance
+    let exterior_points_mainlayer = loc_info
         .iter()
-        .map(|(loc, dist)| (loc, dist.min(*under_distance.get(loc).unwrap())))
-        .filter(|(_loc, dist)| *dist > opt.rope_thickness)
-        .map(|(loc, _dist)| loc)
-        .map(|x| *x)
+        .filter(|info| info.path_distance > opt.rope_thickness)
+        .map(|info| info.loc)
         .collect::<Vec<_>>();
 
     // List all points outside the allowed region on the underlayer.
     // Only regions that are needed for the crossovers are enabled, to
     // save on computation time.
-    let exterior_points_underlayer = over_distance
+    let exterior_points_underlayer = loc_info
         .iter()
-        .map(|(&loc, _d)| loc)
-        .filter(|loc| {
-            let path_d = *path_distance.get(loc).unwrap();
-            let over_d = *over_distance.get(loc).unwrap();
-            let intersection_d = *intersection_distance.get(loc).unwrap();
-            let anti_intersection_d =
-                *anti_intersection_distance.get(loc).unwrap();
-
-            !((path_d < opt.rope_thickness)
-                && (intersection_d < anti_intersection_d)
-                && (over_d < opt.rope_thickness * 1.1))
+        .filter(|info| {
+            !((info.path_distance < opt.rope_thickness)
+                && (info.intersection_distance
+                    < info.anti_intersection_distance)
+                && (info.over_distance < opt.rope_thickness * 1.1))
         })
-        .map(|loc| PixelLoc {
+        .map(|info| PixelLoc {
             layer: 1,
-            i: loc.i,
-            j: loc.j,
+            ..info.loc
         })
         .collect::<Vec<_>>();
 
     // The connections between the main layer and the underlayer.
     // These are on the path, just outside of the intersections.
-    let connected_points = over_distance
+    let connected_points = loc_info
         .iter()
-        .map(|(&loc, _d)| loc)
-        .filter(|loc| {
-            let path_d = *path_distance.get(loc).unwrap();
-            let over_d = *over_distance.get(loc).unwrap();
-            //let under_d = *under_distance.get(loc).unwrap();
-            let intersection_d = *intersection_distance.get(loc).unwrap();
-            let anti_intersection_d =
-                *anti_intersection_distance.get(loc).unwrap();
-
-            (path_d < opt.rope_thickness)
-                && (over_d > opt.rope_thickness * 1.05)
-                && (over_d < opt.rope_thickness * 1.1)
-                && (intersection_d < anti_intersection_d)
+        .filter(|info| {
+            (info.path_distance < opt.rope_thickness)
+                && (info.over_distance > opt.rope_thickness * 1.05)
+                && (info.over_distance < opt.rope_thickness * 1.1)
+                && (info.intersection_distance
+                    < info.anti_intersection_distance)
         })
-        .map(|loc| {
-            let upper = PixelLoc {
-                layer: 1,
-                i: loc.i,
-                j: loc.j,
-            };
-            (loc, upper)
+        .map(|info| {
+            (
+                info.loc,
+                PixelLoc {
+                    layer: 1,
+                    ..info.loc
+                },
+            )
         })
         .collect::<Vec<_>>();
 
     // The barriers to prevent the over and under layers from
     // interacting at an intersection.
-    let forbidden_points_outline = over_distance
+    let forbidden_points_outline = loc_info
         .iter()
-        .map(|(&loc, _d)| loc)
-        .filter(|loc| {
-            let path_d = *path_distance.get(loc).unwrap();
-            let over_d = *over_distance.get(loc).unwrap();
-            //let under_d = *under_distance.get(loc).unwrap();
-            let intersection_d = *intersection_distance.get(loc).unwrap();
-            let anti_intersection_d =
-                *anti_intersection_distance.get(loc).unwrap();
-
-            (path_d < opt.rope_thickness)
-                && (over_d > opt.rope_thickness * 1.0)
-                && (over_d < opt.rope_thickness * 1.05)
-                && (intersection_d < anti_intersection_d)
+        .filter(|info| {
+            (info.path_distance < opt.rope_thickness)
+                && (info.over_distance > opt.rope_thickness * 1.0)
+                && (info.over_distance < opt.rope_thickness * 1.05)
+                && (info.intersection_distance
+                    < info.anti_intersection_distance)
         })
+        .map(|info| info.loc)
         .collect::<Vec<_>>();
 
     CelticKnotDetails {

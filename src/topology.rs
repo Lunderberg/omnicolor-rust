@@ -139,11 +139,14 @@ impl Topology {
             .scan(0, |cumsum, (layer_i, layer)| {
                 let min_index = *cumsum;
                 *cumsum = min_index + layer.len();
-                Some((min_index, layer, layer_i))
+                let max_index = *cumsum;
+                Some((min_index, max_index, layer, layer_i))
             })
-            .filter(|&(min_index, _layer, _layer_i)| index >= min_index)
+            .filter(|&(min_index, max_index, _layer, _layer_i)| {
+                index >= min_index && index < max_index
+            })
             .next()
-            .map(|(min_index, layer, layer_i)| {
+            .map(|(min_index, _max_index, layer, layer_i)| {
                 layer.get_loc(layer_i as u8, index - min_index)
             })
             .flatten()
@@ -154,7 +157,7 @@ impl Topology {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct RectangularArray {
     pub width: u32,
     pub height: u32,
@@ -384,6 +387,43 @@ mod test {
                 PixelLoc { layer, i: 3, j: 1 },
                 PixelLoc { layer, i: 3, j: 2 },
             ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_topology_index_lookup() -> Result<(), Error> {
+        let topology = Topology {
+            layers: vec![
+                RectangularArray {
+                    width: 10,
+                    height: 10,
+                },
+                RectangularArray {
+                    width: 5,
+                    height: 5,
+                },
+            ],
+            portals: HashMap::new(),
+        };
+
+        assert_eq!(
+            topology.get_loc(0),
+            Some(PixelLoc {
+                layer: 0,
+                i: 0,
+                j: 0
+            })
+        );
+
+        assert_eq!(
+            topology.get_loc(100),
+            Some(PixelLoc {
+                layer: 1,
+                i: 0,
+                j: 0
+            })
         );
 
         Ok(())

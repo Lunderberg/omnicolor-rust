@@ -1,5 +1,10 @@
 mod errors;
 
+// Uncertain if this one belongs here, but is useful in some of the
+// examples.
+
+pub mod bezier_util;
+
 mod color;
 mod growth_image;
 mod growth_image_builder;

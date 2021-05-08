@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use clap::arg_enum;
-use indicatif::{ProgressBar, ProgressStyle};
 use structopt::StructOpt;
 
 use omnicolor_rust::palettes::*;
@@ -54,6 +53,7 @@ fn main() -> Result<(), Error> {
 
     let mut builder = GrowthImageBuilder::new();
     builder
+        .show_progress_bar()
         .add_layer(opt.width, opt.height)
         .epsilon(opt.epsilon);
     match opt.palette {
@@ -68,17 +68,7 @@ fn main() -> Result<(), Error> {
     }
 
     let mut image = builder.build()?;
-
-    let bar = ProgressBar::new((opt.width * opt.height).into());
-    bar.set_style(ProgressStyle::default_bar().template(
-        "[{pos}/{len}] {wide_bar} [{elapsed_precise}, ETA: {eta_precise}]",
-    ));
-    bar.set_draw_rate(10);
-    while !image.is_done() {
-        image.fill();
-        bar.inc(1);
-    }
-    bar.finish();
+    image.fill_until_done();
 
     if let Some(output) = opt.output {
         image.write(&output);

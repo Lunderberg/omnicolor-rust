@@ -20,9 +20,7 @@ fn generate_flat_image(b: &mut Bencher) {
 
     b.iter(|| {
         let mut image = builder.build().unwrap();
-        while !image.is_done() {
-            image.fill();
-        }
+        image.fill_until_done();
     });
 }
 

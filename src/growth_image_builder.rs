@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use indicatif::{ProgressBar, ProgressStyle};
 use rand::{Rng, SeedableRng};
 
 use crate::errors::Error;
@@ -14,6 +15,7 @@ pub struct GrowthImageBuilder {
     epsilon: f64,
     stages: Vec<GrowthImageStageBuilder>,
     seed: Option<u64>,
+    show_progress_bar: bool,
 }
 
 impl GrowthImageBuilder {
@@ -28,7 +30,13 @@ impl GrowthImageBuilder {
             epsilon: 1.0,
             stages: Vec::new(),
             seed: None,
+            show_progress_bar: false,
         }
+    }
+
+    pub fn show_progress_bar(&mut self) -> &mut Self {
+        self.show_progress_bar = true;
+        self
     }
 
     pub fn add_layer(&mut self, width: u32, height: u32) -> &mut Self {
@@ -83,6 +91,17 @@ impl GrowthImageBuilder {
             .map(|s| s.build(&self.topology, &mut rng))
             .collect();
 
+        let progress_bar = if self.show_progress_bar {
+            let bar = ProgressBar::new(self.topology.len() as u64);
+            bar.set_style(ProgressStyle::default_bar().template(
+                "[{pos}/{len}] {wide_bar} [{elapsed_precise}, ETA: {eta_precise}]",
+            ));
+            bar.set_draw_rate(10);
+            Some(bar)
+        } else {
+            None
+        };
+
         // TODO: Avoid copying the topology every which way.  If I can
         // wrangle the lifetimes, should be able to have the portal
         // HashMap live in the stage and be borrowed from there.
@@ -98,6 +117,7 @@ impl GrowthImageBuilder {
             is_done: false,
             num_filled_pixels: 0,
             rng,
+            progress_bar,
         })
     }
 }

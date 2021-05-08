@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use roxmltree::Document;
 use structopt::StructOpt;
@@ -288,6 +287,7 @@ fn main() -> Result<(), Error> {
     // Define the builder, with main layer (0) and underlayer (1).
     let mut builder = GrowthImageBuilder::new();
     builder
+        .show_progress_bar()
         .epsilon(5.0)
         .add_layer(opt.width, opt.height)
         .add_layer(opt.width, opt.height);
@@ -335,17 +335,7 @@ fn main() -> Result<(), Error> {
 
     // Run the builder.
     let mut image = builder.build()?;
-
-    let bar = ProgressBar::new((opt.width * opt.height).into());
-    bar.set_style(ProgressStyle::default_bar().template(
-        "[{pos}/{len}] {wide_bar} [{elapsed_precise}, ETA: {eta_precise}]",
-    ));
-    bar.set_draw_rate(10);
-    while !image.is_done() {
-        image.fill();
-        bar.inc(1);
-    }
-    bar.finish();
+    image.fill_until_done();
 
     image.write(&opt.output);
 

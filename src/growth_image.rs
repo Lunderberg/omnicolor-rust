@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use indicatif::ProgressBar;
 use rand::Rng;
 
 use crate::color::RGB;
@@ -40,6 +41,7 @@ pub struct GrowthImage {
     pub(crate) rng: rand_chacha::ChaCha8Rng,
 
     pub(crate) is_done: bool,
+    pub(crate) progress_bar: Option<ProgressBar>,
 }
 
 pub struct GrowthImageStage {
@@ -57,9 +59,22 @@ impl GrowthImage {
         self.is_done
     }
 
+    pub fn fill_until_done(&mut self) {
+        while !self.is_done {
+            self.fill();
+        }
+    }
+
     pub fn fill(&mut self) {
         let res = self.try_fill();
         self.is_done = res.is_none();
+
+        if let Some(bar) = &self.progress_bar {
+            bar.inc(1);
+            if self.is_done {
+                bar.finish();
+            }
+        }
     }
 
     pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {

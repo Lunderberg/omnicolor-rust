@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use rand::{Rng, SeedableRng};
 
 use crate::errors::Error;
-use crate::growth_image::{GrowthImage, GrowthImageStage};
+use crate::growth_image::{
+    GrowthImage, GrowthImageAnimation, GrowthImageStage, SaveImageType,
+};
 use crate::kd_tree::KDTree;
 use crate::palettes::{Palette, UniformPalette};
 use crate::point_tracker::PointTracker;
@@ -16,6 +19,8 @@ pub struct GrowthImageBuilder {
     stages: Vec<GrowthImageStageBuilder>,
     seed: Option<u64>,
     show_progress_bar: bool,
+
+    animation_outputs: Vec<GrowthImageAnimationBuilder>,
 }
 
 impl GrowthImageBuilder {
@@ -31,12 +36,22 @@ impl GrowthImageBuilder {
             stages: Vec::new(),
             seed: None,
             show_progress_bar: false,
+            animation_outputs: Vec::new(),
         }
     }
 
     pub fn show_progress_bar(&mut self) -> &mut Self {
         self.show_progress_bar = true;
         self
+    }
+
+    pub fn add_output_animation(
+        &mut self,
+        filename: PathBuf,
+    ) -> &mut GrowthImageAnimationBuilder {
+        let new_stage = GrowthImageAnimationBuilder::new(filename);
+        self.animation_outputs.push(new_stage);
+        self.animation_outputs.last_mut().unwrap()
     }
 
     pub fn add_layer(&mut self, width: u32, height: u32) -> &mut Self {
@@ -102,6 +117,12 @@ impl GrowthImageBuilder {
             None
         };
 
+        let animation_outputs = self
+            .animation_outputs
+            .iter()
+            .map(|anim| anim.build())
+            .collect::<Result<_, _>>()?;
+
         // TODO: Avoid copying the topology every which way.  If I can
         // wrangle the lifetimes, should be able to have the portal
         // HashMap live in the stage and be borrowed from there.
@@ -118,6 +139,7 @@ impl GrowthImageBuilder {
             num_filled_pixels: 0,
             rng,
             progress_bar,
+            animation_outputs,
         })
     }
 }
@@ -257,5 +279,70 @@ impl GrowthImageStageBuilder {
             forbidden_points: self.forbidden_points.clone(),
             portals,
         }
+    }
+}
+
+pub struct GrowthImageAnimationBuilder {
+    output_file: PathBuf,
+    fps: f64,
+    iter_per_second: f64,
+    layer: u8,
+    image_type: SaveImageType,
+}
+
+impl GrowthImageAnimationBuilder {
+    fn new(output_file: PathBuf) -> Self {
+        Self {
+            output_file,
+            fps: 24.0,
+            iter_per_second: 240000.0,
+            layer: 0,
+            image_type: SaveImageType::Generated,
+        }
+    }
+
+    pub fn fps(&mut self, fps: f64) -> &mut Self {
+        self.fps = fps;
+        self
+    }
+
+    pub fn iter_per_second(&mut self, iter_per_second: f64) -> &mut Self {
+        self.iter_per_second = iter_per_second;
+        self
+    }
+
+    pub fn layer(&mut self, layer: u8) -> &mut Self {
+        self.layer = layer;
+        self
+    }
+
+    pub fn image_type(&mut self, image_type: SaveImageType) -> &mut Self {
+        self.image_type = image_type;
+        self
+    }
+
+    fn build(&self) -> Result<GrowthImageAnimation, Error> {
+        let proc = std::process::Command::new("ffmpeg")
+            .args(&["-f", "image2pipe", "-i", "-"])
+            .args(&["-hide_banner", "-loglevel", "error"])
+            .args(&["-framerate", &self.fps.to_string()])
+            .args(&["-vcodec", "libx264"])
+            .args(&["-pix_fmt", "yuv420p"])
+            // crf for libx264 is on scale from 0 to 51.  0 is lossless.
+            .args(&["-crf", "23"])
+            .args(&["-preset", "fast"])
+            .arg("-y")
+            .arg(&self.output_file)
+            // Images will be sent to ffmpeg by stdin
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+
+        // TODO: Start ffmpeg subprocess here.
+        Ok(GrowthImageAnimation {
+            proc,
+            iter_per_frame: (self.iter_per_second / self.fps) as usize,
+            image_type: self.image_type,
+            layer: self.layer,
+        })
     }
 }

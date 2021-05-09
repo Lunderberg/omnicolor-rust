@@ -8,15 +8,21 @@ use structopt::StructOpt;
 use kurbo::{BezPath, ParamCurve, ParamCurveNearest, Shape};
 
 use omnicolor_rust::{
-    Error, GrowthImageBuilder, PixelLoc, SphericalPalette, RGB,
+    Error, GrowthImageBuilder, PixelLoc, SaveImageType, SphericalPalette, RGB,
 };
 
 use omnicolor_rust::bezier_util::BezPathExt;
 
 #[derive(Debug, StructOpt)]
 struct Options {
-    #[structopt(short = "o", long)]
-    output: PathBuf,
+    #[structopt(short = "o", long, required_unless_one(&["output-animation", "output-animation-palette"]))]
+    output: Option<PathBuf>,
+
+    #[structopt(long)]
+    output_animation: Option<PathBuf>,
+
+    #[structopt(long)]
+    output_animation_palette: Option<PathBuf>,
 
     #[structopt(short, long, default_value = "1920")]
     width: u32,
@@ -292,6 +298,18 @@ fn main() -> Result<(), Error> {
         .add_layer(opt.width, opt.height)
         .add_layer(opt.width, opt.height);
 
+    if let Some(output) = opt.output_animation {
+        builder
+            .add_output_animation(output)
+            .image_type(SaveImageType::Generated);
+    }
+
+    if let Some(output) = opt.output_animation_palette {
+        builder
+            .add_output_animation(output)
+            .image_type(SaveImageType::ColorPalette);
+    }
+
     // First stage.  Everything outside the knot is forbidden on the
     // main layer, portals to the underlayer are enabled.
     builder
@@ -337,7 +355,9 @@ fn main() -> Result<(), Error> {
     let mut image = builder.build()?;
     image.fill_until_done();
 
-    image.write(opt.output);
+    if let Some(output) = opt.output {
+        image.write(output);
+    }
 
     Ok(())
 }

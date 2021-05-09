@@ -16,8 +16,14 @@ arg_enum! {
 
 #[derive(Debug, StructOpt)]
 struct Options {
-    #[structopt(short = "o", long, required_unless("output-stats"))]
+    #[structopt(short = "o", long, required_unless_one(&["output-stats", "output-animation", "output-animation-palette"]))]
     output: Option<PathBuf>,
+
+    #[structopt(long)]
+    output_animation: Option<PathBuf>,
+
+    #[structopt(long)]
+    output_animation_palette: Option<PathBuf>,
 
     #[structopt(short, long)]
     seed: Option<u64>,
@@ -67,6 +73,19 @@ fn main() -> Result<(), Error> {
         builder.seed(seed);
     }
 
+    if let Some(output) = opt.output_animation {
+        builder
+            .add_output_animation(output)
+            .image_type(SaveImageType::Generated);
+    }
+
+    if let Some(output) = opt.output_animation_palette {
+        builder
+            .add_output_animation(output)
+            .image_type(SaveImageType::ColorPalette);
+    }
+
+    // Now, build the image
     let mut image = builder.build()?;
     image.fill_until_done();
 

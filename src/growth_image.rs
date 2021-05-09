@@ -7,7 +7,7 @@ use rand::Rng;
 use crate::color::RGB;
 use crate::kd_tree::{KDTree, PerformanceStats, Point};
 use crate::point_tracker::PointTracker;
-use crate::topology::{PixelLoc, RectangularArray, Topology};
+use crate::topology::{PixelLoc, Topology};
 
 impl Point for RGB {
     type Dtype = u8;
@@ -42,6 +42,7 @@ pub struct GrowthImage {
 
     pub(crate) is_done: bool,
     pub(crate) progress_bar: Option<ProgressBar>,
+    pub(crate) animation_outputs: Vec<GrowthImageAnimation>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -67,6 +68,13 @@ pub struct GrowthImageStage {
     pub(crate) portals: HashMap<PixelLoc, PixelLoc>,
 }
 
+pub struct GrowthImageAnimation {
+    pub(crate) proc: std::process::Child,
+    pub(crate) iter_per_frame: usize,
+    pub(crate) image_type: SaveImageType,
+    pub(crate) layer: u8,
+}
+
 impl GrowthImage {
     pub fn is_done(&self) -> bool {
         self.is_done
@@ -88,6 +96,8 @@ impl GrowthImage {
                 bar.finish();
             }
         }
+
+        self._write_to_animations();
     }
 
     pub fn get_adjacent_color(&self, loc: PixelLoc) -> Option<RGB> {
@@ -249,15 +259,52 @@ impl GrowthImage {
         image_type: SaveImageType,
         layer: u8,
     ) {
-        let data = match image_type {
-            SaveImageType::Generated => self._image_data(layer),
-            SaveImageType::Statistics => self._statistics_image_data(layer),
-            SaveImageType::ColorPalette => self._color_palette_image_data(),
-        };
-        self._write_image_data(filename, &data);
+        self._write_image_data(filename, &self._image_data(image_type, layer));
     }
 
-    fn _image_data(&self, layer: u8) -> SaveImageData {
+    fn _write_to_animations(&mut self) {
+        // Steal the stdin from the GrowthImageAnimations
+        let mut stdin_list: Vec<_> = self
+            .animation_outputs
+            .iter_mut()
+            .map(|anim| anim.proc.stdin.take().unwrap())
+            .collect();
+
+        // Write to it, which requires immutable borrow of other parts
+        // of self.
+        self.animation_outputs
+            .iter()
+            .zip(stdin_list.iter_mut())
+            .filter(|(anim, _stdin)| {
+                (self.num_filled_pixels - 1) % anim.iter_per_frame == 0
+            })
+            .for_each(|(anim, stdin)| {
+                let data = self._image_data(anim.image_type, anim.layer);
+                self._write_image_data_to_writer(stdin, &data);
+            });
+
+        // Put the stdin back into the GrowthImageAnimations
+        self.animation_outputs
+            .iter_mut()
+            .zip(stdin_list.into_iter())
+            .for_each(|(anim, stdin)| {
+                anim.proc.stdin.replace(stdin);
+            });
+    }
+
+    fn _image_data(
+        &self,
+        image_type: SaveImageType,
+        layer: u8,
+    ) -> SaveImageData {
+        match image_type {
+            SaveImageType::Generated => self._generated_image_data(layer),
+            SaveImageType::Statistics => self._statistics_image_data(layer),
+            SaveImageType::ColorPalette => self._color_palette_image_data(),
+        }
+    }
+
+    fn _generated_image_data(&self, layer: u8) -> SaveImageData {
         let index_range = self.topology.get_layer_bounds(layer).unwrap();
         let size = self.topology.layers[layer as usize];
         let data = self.pixels[index_range]
@@ -320,7 +367,7 @@ impl GrowthImage {
     }
 
     fn _color_palette_image_data(&self) -> SaveImageData {
-        let data = self.stages[self.active_stage.unwrap_or(0)]
+        let mut data = self.stages[self.active_stage.unwrap_or(0)]
             .palette
             .iter_points()
             .map(|p| match p {
@@ -340,6 +387,10 @@ impl GrowthImage {
         let height = (area / aspect_ratio).sqrt();
         let width = (height * aspect_ratio).ceil() as u32;
         let height = height.ceil() as u32;
+
+        // Pad data array out with 0 as needed.
+        data.resize((4 * width * height) as usize, 0);
+
         SaveImageData {
             data,
             width,
@@ -351,11 +402,27 @@ impl GrowthImage {
         let file = std::fs::File::create(filename).unwrap();
         let bufwriter = &mut std::io::BufWriter::new(file);
 
-        let mut encoder = png::Encoder::new(bufwriter, data.width, data.height);
+        self._write_image_data_to_writer(bufwriter, data);
+    }
+
+    fn _write_image_data_to_writer(
+        &self,
+        writer: &mut impl std::io::Write,
+        data: &SaveImageData,
+    ) {
+        let mut encoder = png::Encoder::new(writer, data.width, data.height);
         encoder.set_color(png::ColorType::RGBA);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
 
         writer.write_image_data(&data.data).unwrap();
+    }
+}
+
+impl Drop for GrowthImage {
+    fn drop(&mut self) {
+        self.animation_outputs.iter_mut().for_each(|anim| {
+            anim.proc.wait().unwrap();
+        });
     }
 }

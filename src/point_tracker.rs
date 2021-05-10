@@ -91,10 +91,22 @@ impl PointTracker {
     }
 
     pub fn mark_as_used(&mut self, loc: PixelLoc) {
+        self._mark_used_unused_state(loc, true);
+    }
+
+    pub fn mark_as_unused(&mut self, loc: PixelLoc) {
+        self._mark_used_unused_state(loc, false);
+    }
+
+    fn _mark_used_unused_state(&mut self, loc: PixelLoc, val: bool) {
         let index = self.topology.get_index(loc);
         if let Some(index) = index {
-            self.used[index] = true;
+            self.used[index] = val;
         }
+    }
+
+    pub fn mark_all_as_used(&mut self) {
+        self.used.iter_mut().for_each(|x| *x = true);
     }
 
     pub fn is_done(&self) -> bool {

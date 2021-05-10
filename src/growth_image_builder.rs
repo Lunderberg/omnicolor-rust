@@ -6,7 +6,8 @@ use rand::{Rng, SeedableRng};
 
 use crate::errors::Error;
 use crate::growth_image::{
-    GrowthImage, GrowthImageAnimation, GrowthImageStage, SaveImageType,
+    GrowthImage, GrowthImageAnimation, GrowthImageStage, RestrictedRegion,
+    SaveImageType,
 };
 use crate::kd_tree::KDTree;
 use crate::palettes::{Palette, UniformPalette};
@@ -161,7 +162,7 @@ pub struct GrowthImageStageBuilder {
     grow_from_previous: Option<bool>,
     is_first_stage: bool,
 
-    forbidden_points: Vec<PixelLoc>,
+    restricted_region: RestrictedRegion,
     connected_points: Vec<(PixelLoc, PixelLoc)>,
 }
 
@@ -175,7 +176,7 @@ impl GrowthImageStageBuilder {
             selected_seed_points: None,
             grow_from_previous: None,
             is_first_stage: stage_i == 0,
-            forbidden_points: Vec::new(),
+            restricted_region: RestrictedRegion::Forbidden(Vec::new()),
             connected_points: Vec::new(),
         }
     }
@@ -219,11 +220,19 @@ impl GrowthImageStageBuilder {
         self
     }
 
+    pub fn allowed_points(
+        &mut self,
+        allowed_points: Vec<PixelLoc>,
+    ) -> &mut Self {
+        self.restricted_region = RestrictedRegion::Allowed(allowed_points);
+        self
+    }
+
     pub fn forbidden_points(
         &mut self,
         forbidden_points: Vec<PixelLoc>,
     ) -> &mut Self {
-        self.forbidden_points = forbidden_points;
+        self.restricted_region = RestrictedRegion::Forbidden(forbidden_points);
         self
     }
 
@@ -276,7 +285,7 @@ impl GrowthImageStageBuilder {
             grow_from_previous: self.grow_from_previous.unwrap_or(true),
             selected_seed_points,
             num_random_seed_points,
-            forbidden_points: self.forbidden_points.clone(),
+            restricted_region: self.restricted_region.clone(),
             portals,
         }
     }

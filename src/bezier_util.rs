@@ -1,5 +1,8 @@
 use itertools::Itertools;
-use kurbo::{BezPath, ParamCurve, ParamCurveArclen, PathSeg, Point};
+use kurbo::{
+    BezPath, Line, ParamCurve, ParamCurveArclen, ParamCurveNearest, PathSeg,
+    Point, Shape,
+};
 
 pub trait BezPathExt {
     fn divide_at_intersections(
@@ -12,6 +15,11 @@ pub trait BezPathExt {
     ) -> (Vec<BezPath>, Vec<Point>);
     fn as_flat(&self, tolerance: f64) -> BezPath;
     fn subsegment(&self, t: f64) -> (BezPath, BezPath);
+
+    fn regions(&self) -> Vec<BezPath>;
+
+    fn contains_by_intersection_count(&self, point: Point) -> bool;
+    fn distance_to_nearest(&self, point: Point) -> f64;
 }
 
 impl BezPathExt for BezPath {
@@ -166,5 +174,35 @@ impl BezPathExt for BezPath {
                     .chain(self.segments().skip(split_i + 1)),
             ),
         )
+    }
+
+    fn regions(&self) -> Vec<BezPath> {
+        self.elements()
+            .split_inclusive(|&pathel| pathel == kurbo::PathEl::ClosePath)
+            .map(|elements| elements.iter().map(|x| *x).collect())
+            .collect()
+    }
+
+    fn contains_by_intersection_count(&self, point: Point) -> bool {
+        let bbox = self.bounding_box();
+        if bbox.contains(point) {
+            let outside_point = Point::new(bbox.min_x() - 1.0, bbox.min_y());
+            let line = Line::new(point, outside_point);
+            let num_intersections = self
+                .segments()
+                .map(|seg| seg.intersect_line(line).len())
+                .sum::<usize>();
+            num_intersections % 2 != 0
+        } else {
+            false
+        }
+    }
+
+    fn distance_to_nearest(&self, point: Point) -> f64 {
+        self.segments()
+            .map(|seg| seg.nearest(point, 1e-3).distance_sq)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .sqrt()
     }
 }

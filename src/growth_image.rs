@@ -58,13 +58,19 @@ struct SaveImageData {
     height: u32,
 }
 
+#[derive(Clone)]
+pub enum RestrictedRegion {
+    Allowed(Vec<PixelLoc>),
+    Forbidden(Vec<PixelLoc>),
+}
+
 pub struct GrowthImageStage {
     pub(crate) palette: KDTree<RGB>,
     pub(crate) max_iter: Option<usize>,
     pub(crate) grow_from_previous: bool,
     pub(crate) selected_seed_points: Vec<PixelLoc>,
     pub(crate) num_random_seed_points: u32,
-    pub(crate) forbidden_points: Vec<PixelLoc>,
+    pub(crate) restricted_region: RestrictedRegion,
     pub(crate) portals: HashMap<PixelLoc, PixelLoc>,
 }
 
@@ -162,6 +168,22 @@ impl GrowthImage {
         // newly forbidden points from the frontier.
         let mut point_tracker = PointTracker::new(self.topology.clone());
 
+        match &active_stage.restricted_region {
+            RestrictedRegion::Allowed(points) => {
+                point_tracker.mark_all_as_used();
+                points
+                    .iter()
+                    .for_each(|&loc| point_tracker.mark_as_unused(loc));
+            }
+            RestrictedRegion::Forbidden(points) => {
+                points
+                    .iter()
+                    .for_each(|&loc| point_tracker.mark_as_used(loc));
+            }
+        }
+
+        // Any additionally specified pixels are forbidden
+
         // All filled pixels are either forbidden, or forbidden with a
         // frontier.
         let filled_locs = self
@@ -176,12 +198,6 @@ impl GrowthImage {
         } else {
             filled_locs.for_each(|loc| point_tracker.mark_as_used(loc));
         };
-
-        // Any additionally specified pixels are forbidden
-        active_stage
-            .forbidden_points
-            .iter()
-            .for_each(|&loc| point_tracker.mark_as_used(loc));
 
         // Add in any selected seed points
         active_stage

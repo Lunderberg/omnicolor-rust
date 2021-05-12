@@ -164,6 +164,8 @@ pub struct GrowthImageStageBuilder {
 
     restricted_region: RestrictedRegion,
     connected_points: Vec<(PixelLoc, PixelLoc)>,
+
+    animation_iter_per_second: f64,
 }
 
 impl GrowthImageStageBuilder {
@@ -178,6 +180,7 @@ impl GrowthImageStageBuilder {
             is_first_stage: stage_i == 0,
             restricted_region: RestrictedRegion::Forbidden(Vec::new()),
             connected_points: Vec::new(),
+            animation_iter_per_second: 240000.0,
         }
     }
 
@@ -244,6 +247,14 @@ impl GrowthImageStageBuilder {
         self
     }
 
+    pub fn animation_iter_per_second(
+        &mut self,
+        iter_per_second: f64,
+    ) -> &mut Self {
+        self.animation_iter_per_second = iter_per_second;
+        self
+    }
+
     fn build(
         &self,
         topology: &Topology,
@@ -287,6 +298,7 @@ impl GrowthImageStageBuilder {
             num_random_seed_points,
             restricted_region: self.restricted_region.clone(),
             portals,
+            animation_iter_per_second: self.animation_iter_per_second,
         }
     }
 }
@@ -294,7 +306,6 @@ impl GrowthImageStageBuilder {
 pub struct GrowthImageAnimationBuilder {
     output_file: PathBuf,
     fps: f64,
-    iter_per_second: f64,
     layer: u8,
     image_type: SaveImageType,
 }
@@ -304,7 +315,6 @@ impl GrowthImageAnimationBuilder {
         Self {
             output_file,
             fps: 24.0,
-            iter_per_second: 240000.0,
             layer: 0,
             image_type: SaveImageType::Generated,
         }
@@ -312,11 +322,6 @@ impl GrowthImageAnimationBuilder {
 
     pub fn fps(&mut self, fps: f64) -> &mut Self {
         self.fps = fps;
-        self
-    }
-
-    pub fn iter_per_second(&mut self, iter_per_second: f64) -> &mut Self {
-        self.iter_per_second = iter_per_second;
         self
     }
 
@@ -346,12 +351,13 @@ impl GrowthImageAnimationBuilder {
             .stdin(std::process::Stdio::piped())
             .spawn()?;
 
-        // TODO: Start ffmpeg subprocess here.
         Ok(GrowthImageAnimation {
             proc,
-            iter_per_frame: (self.iter_per_second / self.fps) as usize,
+            fps: self.fps,
             image_type: self.image_type,
             layer: self.layer,
+            iter_per_frame: 0,
+            iter_since_frame: 0,
         })
     }
 }

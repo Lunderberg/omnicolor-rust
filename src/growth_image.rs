@@ -72,11 +72,16 @@ pub struct GrowthImageStage {
     pub(crate) num_random_seed_points: u32,
     pub(crate) restricted_region: RestrictedRegion,
     pub(crate) portals: HashMap<PixelLoc, PixelLoc>,
+    pub(crate) animation_iter_per_second: f64,
 }
 
 pub struct GrowthImageAnimation {
     pub(crate) proc: std::process::Child,
+
+    pub(crate) fps: f64,
     pub(crate) iter_per_frame: usize,
+    pub(crate) iter_since_frame: usize,
+
     pub(crate) image_type: SaveImageType,
     pub(crate) layer: u8,
 }
@@ -156,6 +161,12 @@ impl GrowthImage {
         self.current_stage_iter = 0;
         let active_stage = &self.stages[stage_index];
 
+        // Recalculate the iterations per frame for each animation.
+        self.animation_outputs.iter_mut().for_each(|anim| {
+            anim.iter_per_frame =
+                (active_stage.animation_iter_per_second / anim.fps) as usize;
+        });
+
         // Update the geometry with new portals.  Long-term, should
         // forbidden points go here as well?  Conceptually, they fit
         // really well with the geometry tracking class, but the
@@ -181,8 +192,6 @@ impl GrowthImage {
                     .for_each(|&loc| point_tracker.mark_as_used(loc));
             }
         }
-
-        // Any additionally specified pixels are forbidden
 
         // All filled pixels are either forbidden, or forbidden with a
         // frontier.
@@ -279,33 +288,30 @@ impl GrowthImage {
     }
 
     fn _write_to_animations(&mut self) {
-        // Steal the stdin from the GrowthImageAnimations
-        let mut stdin_list: Vec<_> = self
-            .animation_outputs
+        // Steal the animation vector to mutate it.
+        let mut animations = std::mem::take(&mut self.animation_outputs);
+
+        // Increment the iterations since last frame write.
+        animations
             .iter_mut()
-            .map(|anim| anim.proc.stdin.take().unwrap())
-            .collect();
+            .for_each(|anim| anim.iter_since_frame += 1);
 
         // Write to it, which requires immutable borrow of other parts
         // of self.
-        self.animation_outputs
-            .iter()
-            .zip(stdin_list.iter_mut())
-            .filter(|(anim, _stdin)| {
-                (self.num_filled_pixels - 1) % anim.iter_per_frame == 0
-            })
-            .for_each(|(anim, stdin)| {
+        animations
+            .iter_mut()
+            .filter(|anim| anim.iter_since_frame >= anim.iter_per_frame)
+            .for_each(|anim| {
                 let data = self._image_data(anim.image_type, anim.layer);
-                self._write_image_data_to_writer(stdin, &data);
+                self._write_image_data_to_writer(
+                    &mut anim.proc.stdin.as_ref().unwrap(),
+                    &data,
+                );
+                anim.iter_since_frame = 0;
             });
 
-        // Put the stdin back into the GrowthImageAnimations
-        self.animation_outputs
-            .iter_mut()
-            .zip(stdin_list.into_iter())
-            .for_each(|(anim, stdin)| {
-                anim.proc.stdin.replace(stdin);
-            });
+        // Put the animation vector back
+        std::mem::swap(&mut animations, &mut self.animation_outputs);
     }
 
     fn _image_data(
